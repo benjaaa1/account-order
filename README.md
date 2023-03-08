@@ -17,28 +17,15 @@ npx hardhat node
 npx hardhat run scripts/deploy.ts
 ```
 
-_/ revert InsufficientEthBalance(address(this).balance, 1 ether / 100);
-_/ revert InvalidOrderType();
-_/ revert OrderInvalid(\_orderId);
-_/ revert InvalidStrike(strikeTrade.strikeId, strikeTrade.market);
-_/ revert PremiumAboveExpected(result.totalCost, \_maxPremium);
-_/ revert PremiumBelowExpected(result.totalCost, \_minExpectedPremium);
-_/ revert InsufficientFreeMargin(freeMargin(), \_amount);
-_/ revert EthWithdrawalFailed();
+## AccountFactory
 
-emit StrikeOrderPlaced(address(this), \_trade, orderId);
-emit Str
-_/ emit Withdraw(msg.sender, \_amount);
-_/ emit OrderCancelled(address(this), \_orderId);
+NewAccount (address indexed owner, address account)
 
-\_getValidStrike => getStrike(\_market, \_strikeId) {
-strike = lyraBase(\_trade.market).getStrikes(\_toDynamic(\_trade.strikeId))[0];
-}
+-
 
-getRequiredCollateral
+## Deployment - Local deployment
 
-revert InvalidTradeDirection(
-address(this),
-\_tradeDirection,
-\_isForceClose
-);
+-   Lyra Deploy Scripts
+-   LyraBase Deploy
+-   AccountFactory Deploy (Gelato required)
+-   AccountOrder
