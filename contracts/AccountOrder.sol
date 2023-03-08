@@ -19,9 +19,16 @@ import {OpsReady} from "./utils/OpsReady.sol";
 contract AccountOrder is MinimalProxyable, OpsReady {
     using SafeDecimalMath for uint;
 
+    /************************************************
+     *  IMMUTABLES & CONSTANTS
+     ***********************************************/
+
+    uint internal constant COLLATERAL_BUFFER = 10 * 10 ** 6; // 10%
+
     enum OrderTypes {
         MARKET,
-        LIMIT,
+        LIMIT_PRICE,
+        LIMIT_VOL,
         TAKE_PROFIT,
         STOP_LOSS
     }
@@ -35,21 +42,23 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     }
 
     struct StrikeTrade {
-        uint collatPercent;
-        uint iterations;
-        uint tradeDirection;
+        OrderTypes orderType;
         bytes32 market;
+        uint iterations;
+        uint collatPercent;
         uint optionType;
         uint strikeId;
         uint size;
         uint positionId;
+        uint tradeDirection;
         uint targetPrice;
-        OrderTypes orderType;
+        uint targetVolatility;
     }
 
     struct StrikeTradeOrder {
         StrikeTrade strikeTrade;
         bytes32 gelatoTaskId;
+        uint committedMargin;
     }
 
     struct TradeInputParameters {
@@ -115,8 +124,8 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         address payable _ops
     ) external initOnce {
         quoteAsset = IERC20(_quoteAsset);
-        lyraBases[keccak256("eth")] = ILyraBase(_ethLyraBase);
-        lyraBases[keccak256("btc")] = ILyraBase(_btcLyraBase);
+        lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
+        lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
         _transferOwnership(msg.sender);
         ops = _ops;
     }
@@ -128,13 +137,20 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @notice place order
      * @param _trade trade details
      */
-    function placeOrder(StrikeTrade memory _trade) public onlyOwner {
+    function placeOrder(StrikeTrade memory _trade) public onlyOwner returns (uint) {
         if (address(this).balance < 1 ether / 100) {
             revert InsufficientEthBalance(address(this).balance, 1 ether / 100);
         }
 
-        // trigger order should have
+        // allow optionmarket to use funds
+        address optionMarket = lyraBase(_trade.market).getOptionMarket();
+        quoteAsset.approve(address(optionMarket), type(uint).max);
+
+        // trigger order should have positionid &&
+        // trigger order is tradeDirection close only &&
+        // trigger order is take profit or stop loss &&
         if (
+            _trade.tradeDirection != 1 &&
             (_trade.orderType == OrderTypes.TAKE_PROFIT ||
                 _trade.orderType == OrderTypes.STOP_LOSS) &&
             _trade.positionId == 0
@@ -142,27 +158,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
             revert InvalidOrderType();
         }
 
-        bool isLong = _isLong(_trade.optionType);
-
-        uint requiredCapital;
-
-        ILyraBase.Strike memory strike = lyraBase(_trade.market).getStrikes(
-            _toDynamic(_trade.strikeId)
-        )[0];
-
-        if (isLong) {
-            // targetprice replaces premium for buy
-            requiredCapital = _trade.size.multiplyDecimal(_trade.targetPrice);
-        } else {
-            // getRequiredCollateral for both of these is best
-            uint collateralToAdd = _getRequiredCollateral(
-                _trade,
-                strike.strikePrice,
-                strike.expiry
-            );
-
-            requiredCapital = collateralToAdd;
-        }
+        uint requiredCapital = _getRequiredCapital(_trade);
 
         // check free margin
         if (requiredCapital > freeMargin()) {
@@ -182,12 +178,40 @@ contract AccountOrder is MinimalProxyable, OpsReady {
 
         orders[orderId] = StrikeTradeOrder({
             strikeTrade: _trade,
-            gelatoTaskId: taskId
+            gelatoTaskId: taskId,
+            committedMargin: committedMargin
         });
 
-        emit StrikeOrderPlaced(address(msg.sender), orders[orderId]);
+        emit StrikeOrderPlaced(address(msg.sender), orderId, orders[orderId]);
 
-        orderId++;
+        return orderId++;
+    }
+
+    /**
+     * @notice calculate required capital for short/long trades
+     * @param _trade trade details
+     * @return requiredCapital to be committed
+     */
+    function _getRequiredCapital(
+        StrikeTrade memory _trade
+    ) internal view returns (uint requiredCapital) {
+        ILyraBase.Strike memory strike = lyraBase(_trade.market).getStrikes(
+            _toDynamic(_trade.strikeId)
+        )[0];
+        bool isLong = _isLong(_trade.optionType);
+
+        if (isLong) {
+            // targetprice replaces premium for buy
+            requiredCapital = _trade.size.multiplyDecimal(_trade.targetPrice);
+        } else {
+            // getRequiredCollateral for both of these is best
+            (uint collateralToAdd, uint setCollateralTo) = _getRequiredCollateral(
+                _trade,
+                strike.strikePrice,
+                strike.expiry
+            );
+            requiredCapital = collateralToAdd;
+        }
     }
 
     /************************************************
@@ -204,10 +228,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         uint256 _orderId
     ) external view returns (bool canExec, bytes memory execPayload) {
         (canExec, ) = validOrder(_orderId);
-        execPayload = abi.encodeWithSelector(
-            this.executeOrder.selector,
-            _orderId
-        );
+        execPayload = abi.encodeWithSelector(this.executeOrder.selector, _orderId);
     }
 
     /**
@@ -218,9 +239,10 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      */
     function validOrder(uint256 _orderId) public view returns (bool, uint) {
         StrikeTradeOrder memory order = orders[_orderId];
-
-        if (order.strikeTrade.orderType == OrderTypes.LIMIT) {
+        if (order.strikeTrade.orderType == OrderTypes.LIMIT_PRICE) {
             return validLimitOrder(order.strikeTrade);
+        } else if (order.strikeTrade.orderType == OrderTypes.LIMIT_VOL) {
+            return validLimitVolOrder(order.strikeTrade);
         } else if (order.strikeTrade.orderType == OrderTypes.TAKE_PROFIT) {
             return validTakeProfitOrder(order.strikeTrade);
         } else if (order.strikeTrade.orderType == OrderTypes.STOP_LOSS) {
@@ -239,11 +261,8 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @return valid
      * @return premium
      */
-    function validLimitOrder(
-        StrikeTrade memory _trade
-    ) internal view returns (bool, uint) {
+    function validLimitOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
         (uint256 totalPremium, ) = getQuote(_trade.strikeId, _trade);
-
         bool isLong = _isLong(_trade.optionType);
 
         if (isLong) {
@@ -262,38 +281,53 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     }
 
     /**
+     * @notice check validity of limit vol orderid
+     * @param _trade trade details
+     * @return valid
+     * @return premium
+     */
+    function validLimitVolOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
+        uint[] memory strikeId = _toDynamic(_trade.strikeId);
+        uint vol = lyraBase(_trade.market).getVols(strikeId)[0];
+        bool isLong = _isLong(_trade.optionType);
+
+        if (isLong) {
+            if (_trade.targetVolatility < vol) {
+                (uint256 totalPremium, ) = getQuote(_trade.strikeId, _trade);
+                return (true, totalPremium);
+            } else {
+                return (false, 0);
+            }
+        } else {
+            if (_trade.targetVolatility > vol) {
+                (uint256 totalPremium, ) = getQuote(_trade.strikeId, _trade);
+                return (true, totalPremium);
+            } else {
+                return (false, 0);
+            }
+        }
+    }
+
+    /**
      * @notice check validity of take profit
      * @param _trade trade details
      * @return valid
      * @return premium
      */
-    function validTakeProfitOrder(
-        StrikeTrade memory _trade
-    ) internal view returns (bool, uint) {
-        // (, ILyraBase.Strike memory strike) = _getValidStrike(_trade);
-        // bool isLong = _isLong(_trade.optionType);
-        // bool isMin = isLong ? false : true;
-        // uint premiumLimit = _getPremiumLimit(
-        //     _trade,
-        //     strike.expiry,
-        //     strike.strikePrice,
-        //     isMin
-        // );
-        // uint premium = _getQuote();
-        // // take profits is somethign with reversed
-        // if (isLong) {
-        //     if (_trade.targetPrice < premiumLimit) {
-        //         return (false, 0);
-        //     } else {
-        //         return (true, premiumLimit);
-        //     }
-        // } else {
-        //     if (_trade.targetPrice > premiumLimit) {
-        //         return (false, 0);
-        //     } else {
-        //         return (true, premiumLimit);
-        //     }
-        // }
+    function validTakeProfitOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
+        (uint256 totalPremiumClose, ) = getQuote(_trade.strikeId, _trade);
+
+        /**
+         *
+         * @dev
+         * targetPrice close at $12 and totalPremium is $10
+         * ui shows at $12 close still profit at $1
+         */
+        if (_trade.targetPrice > totalPremiumClose) {
+            return (true, totalPremiumClose);
+        } else {
+            return (false, 0);
+        }
     }
 
     /**
@@ -302,9 +336,34 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @return valid
      * @return premium
      */
-    function validStopLossOrder(
-        StrikeTrade memory _trade
-    ) internal view returns (bool, uint) {}
+    function validStopLossOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
+        (uint256 totalPremiumClose, ) = getQuote(_trade.strikeId, _trade);
+
+        /**
+         * @dev if original position is long we need a short to close
+         * targetPrice will usually the max the user wants to pay to close the
+         * position
+         * example for a long
+         * Buy $1800 ETH Call for $18 / contract
+         * Trade is going against me
+         * As price to close increases i lose more
+         * $20 to close
+         * $21 to close
+         * if it's $21.50 stop loss and close it and my target was $21.40
+         * if 21.40 and price 21.50 // close it
+         * @dev if original position is short we need to buy/long position to close
+         * targetprice will usually (in ui we can show)
+         * $12 targetPrice and total premium close is $13
+         * shouldve closed a while ago
+         * $12 targetPrice and totalpremium is $11
+         */
+
+        if (_trade.targetPrice < totalPremiumClose) {
+            return (true, totalPremiumClose);
+        } else {
+            return (false, 0);
+        }
+    }
 
     /**
      * @notice execute order if valid
@@ -312,51 +371,56 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      */
     function executeOrder(uint256 _orderId) external onlyOps {
         (bool isValidOrder, uint256 premiumLimit) = validOrder(_orderId);
-
         if (!isValidOrder) {
             revert OrderInvalid(_orderId); /// @dev add premium limit and order id
         }
-
         StrikeTradeOrder memory order = orders[_orderId];
-
         StrikeTrade memory strikeTrade = order.strikeTrade;
-
-        ILyraBase.Strike memory strike = lyraBase(strikeTrade.market)
-            .getStrikes(_toDynamic(strikeTrade.strikeId))[0];
-
-        // if (!_isValid) {
-        //     revert InvalidStrike(strikeTrade.strikeId, strikeTrade.market);
-        // }
+        ILyraBase.Strike memory strike = lyraBase(strikeTrade.market).getStrikes(
+            _toDynamic(strikeTrade.strikeId)
+        )[0];
 
         bool isLong = _isLong(strikeTrade.optionType);
-
         uint positionId;
         uint premium;
 
         if (isLong) {
             (positionId, premium) = buyStrike(strikeTrade, premiumLimit);
         } else {
-            uint setCollateralTo = _getRequiredCollateral(
+            (uint collateralToAdd, uint setCollateralTo) = _getRequiredCollateral(
                 strikeTrade,
                 strike.strikePrice,
                 strike.expiry
             );
 
-            (positionId, premium) = sellStrike(
-                strikeTrade,
-                setCollateralTo,
-                premiumLimit
-            );
+            (positionId, premium) = sellStrike(strikeTrade, setCollateralTo, premiumLimit);
         }
 
-        emit OrderFilled(address(this), _orderId, premium);
+        committedMargin -= order.committedMargin;
+
+        // delete order from orders
+        IOps(ops).cancelTask(order.gelatoTaskId);
+
+        delete orders[_orderId];
+
+        emit OrderFilled(address(this), _orderId);
     }
 
     function _getRequiredCollateral(
         StrikeTrade memory _trade,
         uint _strikePrice,
         uint _expiry
-    ) internal view returns (uint etCollateralTo) {}
+    ) internal view returns (uint collateralToAdd, uint setCollateralTo) {
+        (collateralToAdd, setCollateralTo) = lyraBase(_trade.market).getRequiredCollateral(
+            _trade.size,
+            _trade.optionType,
+            _trade.positionId,
+            _strikePrice,
+            _expiry,
+            COLLATERAL_BUFFER,
+            _trade.collatPercent
+        );
+    }
 
     /**
      * @notice cancels order
@@ -365,6 +429,9 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     function cancelOrder(uint256 _orderId) external onlyOwner {
         StrikeTradeOrder memory order = orders[_orderId];
         IOps(ops).cancelTask(order.gelatoTaskId);
+        // remove from committed margin
+        committedMargin -= order.committedMargin;
+
         // delete order from orders
         delete orders[_orderId];
         emit OrderCancelled(address(this), _orderId);
@@ -381,10 +448,8 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @return positionId
      * @return totalCost
      */
-    function buyStrike(
-        StrikeTrade memory _trade,
-        uint _maxPremium
-    ) internal returns (uint, uint) {
+    function buyStrike(StrikeTrade memory _trade, uint _maxPremium) internal returns (uint, uint) {
+        uint __maxPremium = _maxPremium + (_maxPremium.multiplyDecimal(1000000000000000));
         // perform trade to long
         TradeResult memory result = openPosition(
             _trade.market,
@@ -397,13 +462,13 @@ contract AccountOrder is MinimalProxyable, OpsReady {
                 amount: _trade.size,
                 setCollateralTo: 0,
                 minTotalCost: 0,
-                maxTotalCost: _maxPremium,
+                maxTotalCost: __maxPremium, // add slippage for testing
                 // set to zero address if don't want to wait for whitelist
-                rewardRecipient: address(0)
+                rewardRecipient: address(owner())
             })
         );
 
-        if (result.totalCost > _maxPremium) {
+        if (result.totalCost > __maxPremium) {
             revert PremiumAboveExpected(result.totalCost, _maxPremium);
         }
 
@@ -437,10 +502,9 @@ contract AccountOrder is MinimalProxyable, OpsReady {
                 minTotalCost: _minExpectedPremium,
                 maxTotalCost: type(uint).max,
                 // set to zero address if don't want to wait for whitelist
-                rewardRecipient: address(0)
+                rewardRecipient: address(owner())
             })
         );
-
         if (result.totalCost < _minExpectedPremium) {
             revert PremiumBelowExpected(result.totalCost, _minExpectedPremium);
         }
@@ -458,10 +522,11 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         TradeInputParameters memory params
     ) internal returns (TradeResult memory) {
         address optionMarket = lyraBase(market).getOptionMarket();
-        IOptionMarket.TradeInputParameters
-            memory convertedParams = _convertParams(params);
-        IOptionMarket.Result memory result = IOptionMarket(optionMarket)
-            .openPosition(convertedParams);
+
+        IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
+        IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(
+            convertedParams
+        );
 
         return
             TradeResult({
@@ -482,8 +547,9 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     ) internal returns (TradeResult memory) {
         address optionMarket = lyraBase(market).getOptionMarket();
 
-        IOptionMarket.Result memory result = IOptionMarket(optionMarket)
-            .closePosition(_convertParams(params));
+        IOptionMarket.Result memory result = IOptionMarket(optionMarket).closePosition(
+            _convertParams(params)
+        );
 
         return
             TradeResult({
@@ -538,12 +604,8 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      */
     function _deposit(uint _amount) internal {
         require(
-            quoteAsset.transferFrom(
-                address(msg.sender),
-                address(this),
-                _amount
-            ),
-            "collateral transfer from user failed"
+            quoteAsset.transferFrom(address(msg.sender), address(this), _amount),
+            "deposit from user failed"
         );
 
         emit Deposit(msg.sender, _amount);
@@ -561,10 +623,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
 
         // transfer out margin asset to user
         // (will revert if account does not have amount specified)
-        require(
-            quoteAsset.transfer(owner(), _amount),
-            "AccountOrder: withdraw failed"
-        );
+        require(quoteAsset.transfer(owner(), _amount), "AccountOrder: withdraw failed");
 
         emit Withdraw(msg.sender, _amount);
     }
@@ -591,10 +650,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @return ILyraBase interface
      */
     function lyraBase(bytes32 market) internal view returns (ILyraBase) {
-        require(
-            address(lyraBases[market]) != address(0),
-            "LyraBase: Not available"
-        );
+        require(address(lyraBases[market]) != address(0), "LyraBase: Not available");
         return lyraBases[market];
     }
 
@@ -616,9 +672,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     }
 
     // temporary fix - eth core devs promised Q2 2022 fix
-    function _toDynamic(
-        uint val
-    ) internal pure returns (uint[] memory dynamicArray) {
+    function _toDynamic(uint val) internal pure returns (uint[] memory dynamicArray) {
         dynamicArray = new uint[](1);
         dynamicArray[0] = val;
     }
@@ -630,15 +684,14 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         uint strikeId,
         StrikeTrade memory _trade
     ) public view returns (uint totalPremium, uint totalFees) {
-        return
-            lyraBase(_trade.market).getQuote(
-                strikeId,
-                _trade.iterations,
-                _trade.optionType,
-                _trade.size,
-                _trade.tradeDirection, // 0 open 1 close 2 liquidate
-                false
-            );
+        (totalPremium, totalFees) = lyraBase(_trade.market).getQuote(
+            strikeId,
+            _trade.iterations,
+            _trade.optionType,
+            _trade.size,
+            _trade.tradeDirection, // 0 open 1 close 2 liquidate
+            false
+        );
     }
 
     /************************************************
@@ -661,16 +714,13 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     /// @notice emitted when an order is executed
     /// @param account user
     /// @param _orderId orderId
-    /// @param _premium premium
-    event OrderFilled(address indexed account, uint _orderId, uint _premium);
+    event OrderFilled(address indexed account, uint _orderId);
 
     /// @notice emitted after order is placed with keeper
     /// @param account: user
+    /// @param _orderId: _orderId
     /// @param _tradeOrder: order details
-    event StrikeOrderPlaced(
-        address indexed account,
-        StrikeTradeOrder _tradeOrder
-    );
+    event StrikeOrderPlaced(address indexed account, uint _orderId, StrikeTradeOrder _tradeOrder);
 
     /************************************************
      *  ERRORS
