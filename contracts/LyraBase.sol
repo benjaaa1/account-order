@@ -1,6 +1,8 @@
 //SPDX-License-Identifier:ISC
 pragma solidity ^0.8.9;
 
+import "hardhat/console.sol";
+
 // Libraries
 import {BlackScholes} from "@lyrafinance/protocol/contracts/libraries/BlackScholes.sol";
 import {DecimalMath} from "@lyrafinance/protocol/contracts/synthetix/DecimalMath.sol";
@@ -19,7 +21,6 @@ import {GWAVOracle} from "@lyrafinance/protocol/contracts/periphery/GWAVOracle.s
 
 import {SynthetixAdapter} from "@lyrafinance/protocol/contracts/SynthetixAdapter.sol";
 import {ILyraQuoter} from "./interfaces/ILyraQuoter.sol";
-
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 
 /**
@@ -178,9 +179,7 @@ contract LyraBase {
      * @return spotPrice
      */
     function getSpotPriceForMarket() public view returns (uint spotPrice) {
-        spotPrice = exchangeAdapter.getSpotPriceForMarket(
-            address(optionMarket)
-        );
+        spotPrice = exchangeAdapter.getSpotPriceForMarket(address(optionMarket));
     }
 
     ////////////////////
@@ -197,9 +196,7 @@ contract LyraBase {
 
     // get all board related info (non GWAV)
     function getBoard(uint boardId) internal view returns (Board memory) {
-        OptionMarket.OptionBoard memory board = optionMarket.getOptionBoard(
-            boardId
-        );
+        OptionMarket.OptionBoard memory board = optionMarket.getOptionBoard(boardId);
         return
             Board({
                 id: board.id,
@@ -210,9 +207,7 @@ contract LyraBase {
     }
 
     // get all strike related info (non GWAV)
-    function getStrikes(
-        uint[] memory strikeIds
-    ) public view returns (Strike[] memory allStrikes) {
+    function getStrikes(uint[] memory strikeIds) public view returns (Strike[] memory allStrikes) {
         allStrikes = new Strike[](strikeIds.length);
 
         for (uint i = 0; i < strikeIds.length; i++) {
@@ -233,9 +228,7 @@ contract LyraBase {
     }
 
     // iv * skew only
-    function getVols(
-        uint[] memory strikeIds
-    ) public view returns (uint[] memory vols) {
+    function getVols(uint[] memory strikeIds) public view returns (uint[] memory vols) {
         vols = new uint[](strikeIds.length);
 
         for (uint i = 0; i < strikeIds.length; i++) {
@@ -250,26 +243,18 @@ contract LyraBase {
     }
 
     // get deltas only
-    function getDeltas(
-        uint[] memory strikeIds
-    ) public view returns (int[] memory callDeltas) {
+    function getDeltas(uint[] memory strikeIds) public view returns (int[] memory callDeltas) {
         callDeltas = new int[](strikeIds.length);
         for (uint i = 0; i < strikeIds.length; i++) {
-            BlackScholes.BlackScholesInputs memory bsInput = _getBsInput(
-                strikeIds[i]
-            );
+            BlackScholes.BlackScholesInputs memory bsInput = _getBsInput(strikeIds[i]);
             (callDeltas[i], ) = BlackScholes.delta(bsInput);
         }
     }
 
-    function getVegas(
-        uint[] memory strikeIds
-    ) public view returns (uint[] memory vegas) {
+    function getVegas(uint[] memory strikeIds) public view returns (uint[] memory vegas) {
         vegas = new uint[](strikeIds.length);
         for (uint i = 0; i < strikeIds.length; i++) {
-            BlackScholes.BlackScholesInputs memory bsInput = _getBsInput(
-                strikeIds[i]
-            );
+            BlackScholes.BlackScholesInputs memory bsInput = _getBsInput(strikeIds[i]);
             vegas[i] = BlackScholes.vega(bsInput);
         }
     }
@@ -281,21 +266,18 @@ contract LyraBase {
         uint spotPrice,
         uint strikePrice
     ) public view returns (uint call, uint put) {
-        BlackScholes.BlackScholesInputs memory bsInput = BlackScholes
-            .BlackScholesInputs({
-                timeToExpirySec: secondsToExpiry,
-                volatilityDecimal: vol,
-                spotDecimal: spotPrice,
-                strikePriceDecimal: strikePrice,
-                rateDecimal: greekCache.getGreekCacheParams().rateAndCarry
-            });
+        BlackScholes.BlackScholesInputs memory bsInput = BlackScholes.BlackScholesInputs({
+            timeToExpirySec: secondsToExpiry,
+            volatilityDecimal: vol,
+            spotDecimal: spotPrice,
+            strikePriceDecimal: strikePrice,
+            rateDecimal: greekCache.getGreekCacheParams().rateAndCarry
+        });
         (call, put) = BlackScholes.optionPrices(bsInput);
     }
 
     // get pure black-scholes premium
-    function getPurePremiumForStrike(
-        uint strikeId
-    ) internal view returns (uint call, uint put) {
+    function getPurePremiumForStrike(uint strikeId) internal view returns (uint call, uint put) {
         BlackScholes.BlackScholesInputs memory bsInput = _getBsInput(strikeId);
         (call, put) = BlackScholes.optionPrices(bsInput);
     }
@@ -308,23 +290,18 @@ contract LyraBase {
         return
             MarketParams({
                 standardSize: optionPricer.getPricingParams().standardSize,
-                skewAdjustmentParam: optionPricer
-                    .getPricingParams()
-                    .skewAdjustmentFactor,
+                skewAdjustmentParam: optionPricer.getPricingParams().skewAdjustmentFactor,
                 rateAndCarry: greekCache.getGreekCacheParams().rateAndCarry,
                 deltaCutOff: optionPricer.getTradeLimitParams().minDelta
             });
     }
 
     // get spot price of sAsset and exchange fee percentages
-    function getExchangeParams()
-        public
-        view
-        returns (ExchangeRateParams memory)
-    {
+    function getExchangeParams() public view returns (ExchangeRateParams memory) {
         // update this to only return what is used (spot price)
-        SynthetixAdapter.ExchangeParams memory params = exchangeAdapter
-            .getExchangeParams(address(optionMarket));
+        SynthetixAdapter.ExchangeParams memory params = exchangeAdapter.getExchangeParams(
+            address(optionMarket)
+        );
         return
             ExchangeRateParams({
                 spotPrice: params.spotPrice,
@@ -337,15 +314,10 @@ contract LyraBase {
     // Option Position Getters //
     /////////////////////////////
 
-    function getPositions(
-        uint[] memory positionIds
-    ) public view returns (OptionPosition[] memory) {
-        OptionToken.OptionPosition[] memory positions = optionToken
-            .getOptionPositions(positionIds);
+    function getPositions(uint[] memory positionIds) public view returns (OptionPosition[] memory) {
+        OptionToken.OptionPosition[] memory positions = optionToken.getOptionPositions(positionIds);
 
-        OptionPosition[] memory convertedPositions = new OptionPosition[](
-            positions.length
-        );
+        OptionPosition[] memory convertedPositions = new OptionPosition[](positions.length);
         for (uint i = 0; i < positions.length; i++) {
             convertedPositions[i] = OptionPosition({
                 positionId: positions[i].positionId,
@@ -377,18 +349,15 @@ contract LyraBase {
             );
     }
 
-    function getMinCollateralForPosition(
-        uint positionId
-    ) public view returns (uint) {
-        OptionToken.PositionWithOwner memory position = optionToken
-            .getPositionWithOwner(positionId);
+    function getMinCollateralForPosition(uint positionId) public view returns (uint) {
+        OptionToken.PositionWithOwner memory position = optionToken.getPositionWithOwner(
+            positionId
+        );
         if (_isLong(OptionType(uint(position.optionType)))) return 0;
 
         uint strikePrice;
         uint expiry;
-        (strikePrice, expiry) = optionMarket.getStrikeAndExpiry(
-            position.strikeId
-        );
+        (strikePrice, expiry) = optionMarket.getStrikeAndExpiry(position.strikeId);
 
         return
             getMinCollateral(
@@ -428,16 +397,12 @@ contract LyraBase {
     function _getBsInput(
         uint strikeId
     ) internal view returns (BlackScholes.BlackScholesInputs memory bsInput) {
-        (
-            OptionMarket.Strike memory strike,
-            OptionMarket.OptionBoard memory board
-        ) = optionMarket.getStrikeAndBoard(strikeId);
+        (OptionMarket.Strike memory strike, OptionMarket.OptionBoard memory board) = optionMarket
+            .getStrikeAndBoard(strikeId);
         bsInput = BlackScholes.BlackScholesInputs({
             timeToExpirySec: board.expiry - block.timestamp,
             volatilityDecimal: board.iv.multiplyDecimal(strike.skew),
-            spotDecimal: exchangeAdapter.getSpotPriceForMarket(
-                address(optionMarket)
-            ),
+            spotDecimal: exchangeAdapter.getSpotPriceForMarket(address(optionMarket)),
             strikePriceDecimal: strike.strikePrice,
             rateDecimal: greekCache.getGreekCacheParams().rateAndCarry
         });
@@ -451,10 +416,7 @@ contract LyraBase {
     // Misc //
     //////////
 
-    function volGWAV(
-        uint strikeId,
-        uint secondsAgo
-    ) public view returns (uint) {
+    function volGWAV(uint strikeId, uint secondsAgo) public view returns (uint) {
         OptionMarket.Strike memory strike = optionMarket.getStrike(strikeId);
         return
             gwavOracle.ivGWAV(strike.boardId, secondsAgo).multiplyDecimal(
@@ -481,9 +443,7 @@ contract LyraBase {
      * @dev this is grabbing all the striketrades and not separating by market
      * @dev need to filter out by market first
      */
-    function checkNetDelta(
-        uint[] memory _positionIds
-    ) public view returns (int netDelta) {
+    function checkNetDelta(uint[] memory _positionIds) public view returns (int netDelta) {
         OptionPosition[] memory positions = getPositions(_positionIds);
         uint _positionsLen = positions.length;
         uint[] memory strikeIds = new uint[](_positionsLen);
@@ -503,16 +463,77 @@ contract LyraBase {
     }
 
     /**
+     * @dev get required collatreal for short with collateral percent
+     *
+     */
+
+    function getRequiredCollateral(
+        uint _size,
+        uint _optionType,
+        uint _positionId,
+        uint _strikePrice,
+        uint _strikeExpiry,
+        uint _collatBuffer,
+        uint _collatPercent
+    ) public view returns (uint collateralToAdd, uint setCollateralTo) {
+        // get existing position info if active
+        uint existingAmount;
+        uint existingCollateral;
+
+        if (_positionId > 0) {
+            OptionPosition memory position = getPositions(_toDynamic(_positionId))[0];
+            existingCollateral = position.collateral;
+            existingAmount = position.amount;
+        }
+
+        uint minBufferCollateral = _getBufferCollateral(
+            _strikePrice,
+            _strikeExpiry,
+            existingAmount + _size,
+            _optionType,
+            _collatBuffer
+        );
+
+        uint targetCollat = _getTargetCollateral(
+            existingCollateral,
+            _strikePrice,
+            _size,
+            _optionType,
+            _collatPercent // partial collateral: 0.9 -> 90% * fullCollat
+        );
+
+        // if excess collateral, keep in position to encourage more option selling
+        setCollateralTo = _max(_max(minBufferCollateral, targetCollat), existingCollateral);
+
+        // existingCollateral is never > setCollateralTo
+        collateralToAdd = setCollateralTo - existingCollateral;
+    }
+
+    function _getTargetCollateral(
+        uint _existingCollateral,
+        uint _strikePrice,
+        uint _size,
+        uint _optionType,
+        uint _collatPercent
+    ) internal pure returns (uint targetCollat) {
+        targetCollat =
+            _existingCollateral +
+            _getFullCollateral(_strikePrice, _size, _optionType).multiplyDecimal(_collatPercent);
+    }
+
+    /**
      * @dev get amount of collateral needed for shorting {amount} of strike, according to the strategy
      */
     function _getBufferCollateral(
         uint _strikePrice,
         uint _expiry,
-        uint _spotPrice,
         uint _amount,
         uint _optionType,
         uint _collatBuffer
     ) internal view returns (uint) {
+        ExchangeRateParams memory exchangeParams = getExchangeParams();
+
+        uint _spotPrice = exchangeParams.spotPrice;
         uint minCollat = getMinCollateral(
             OptionType(_optionType),
             _strikePrice,
@@ -523,11 +544,7 @@ contract LyraBase {
         require(minCollat > 0, "min collat must be more");
         uint minCollatWithBuffer = minCollat.multiplyDecimal(_collatBuffer);
 
-        uint fullCollat = _getFullCollateral(
-            _strikePrice,
-            _amount,
-            _optionType
-        );
+        uint fullCollat = _getFullCollateral(_strikePrice, _amount, _optionType);
         require(fullCollat > 0, "fullCollat collat must be more");
 
         return _min(minCollatWithBuffer, fullCollat);
@@ -539,21 +556,19 @@ contract LyraBase {
         uint _optionType
     ) internal pure returns (uint fullCollat) {
         // calculate required collat based on collatBuffer and collatPercent
-        fullCollat = _isBaseCollat(_optionType)
-            ? amount
-            : amount.multiplyDecimal(strikePrice);
+        fullCollat = _isBaseCollat(_optionType) ? amount : amount.multiplyDecimal(strikePrice);
     }
 
-    function _isBaseCollat(
-        uint _optionType
-    ) internal pure returns (bool isBase) {
-        isBase = (OptionType(_optionType) == OptionType.SHORT_CALL_BASE)
-            ? true
-            : false;
+    function _isBaseCollat(uint _optionType) internal pure returns (bool isBase) {
+        isBase = (OptionType(_optionType) == OptionType.SHORT_CALL_BASE) ? true : false;
     }
 
     function _min(uint x, uint y) internal pure returns (uint) {
         return (x < y) ? x : y;
+    }
+
+    function _max(uint x, uint y) internal pure returns (uint) {
+        return (x > y) ? x : y;
     }
 
     function _abs(int val) internal pure returns (uint) {
@@ -561,9 +576,7 @@ contract LyraBase {
     }
 
     // temporary fix - eth core devs promised Q2 2022 fix
-    function _toDynamic(
-        uint val
-    ) internal pure returns (uint[] memory dynamicArray) {
+    function _toDynamic(uint val) internal pure returns (uint[] memory dynamicArray) {
         dynamicArray = new uint[](1);
         dynamicArray[0] = val;
     }
@@ -581,16 +594,14 @@ contract LyraBase {
         bool _isForceClose
     ) public view returns (uint256 totalPremium, uint256 totalFee) {
         address _optionMarket = address(optionMarket);
-
-        return
-            lyraQuoter.quote(
-                IOptionMarket(_optionMarket),
-                _strikeId,
-                _iterations,
-                IOptionMarket.OptionType(_optionType),
-                _amount,
-                IOptionMarket.TradeDirection(_tradeDirection),
-                _isForceClose
-            );
+        (totalPremium, totalFee) = lyraQuoter.quote(
+            IOptionMarket(_optionMarket),
+            _strikeId,
+            _iterations,
+            IOptionMarket.OptionType(_optionType),
+            _amount,
+            IOptionMarket.TradeDirection(_tradeDirection),
+            _isForceClose
+        );
     }
 }

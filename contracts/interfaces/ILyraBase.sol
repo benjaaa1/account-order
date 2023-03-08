@@ -113,21 +113,13 @@ interface ILyraBase {
 
     function getBoard(uint boardId) external view returns (Board memory);
 
-    function getStrikes(
-        uint[] memory strikeIds
-    ) external view returns (Strike[] memory allStrikes);
+    function getStrikes(uint[] memory strikeIds) external view returns (Strike[] memory allStrikes);
 
-    function getVols(
-        uint[] memory strikeIds
-    ) external view returns (uint[] memory vols);
+    function getVols(uint[] memory strikeIds) external view returns (uint[] memory vols);
 
-    function getDeltas(
-        uint[] memory strikeIds
-    ) external view returns (int[] memory callDeltas);
+    function getDeltas(uint[] memory strikeIds) external view returns (int[] memory callDeltas);
 
-    function getVegas(
-        uint[] memory strikeIds
-    ) external view returns (uint[] memory vegas);
+    function getVegas(uint[] memory strikeIds) external view returns (uint[] memory vegas);
 
     function getPurePremium(
         uint secondsToExpiry,
@@ -136,18 +128,13 @@ interface ILyraBase {
         uint strikePrice
     ) external view returns (uint call, uint put);
 
-    function getPurePremiumForStrike(
-        uint strikeId
-    ) external view returns (uint call, uint put);
+    function getPurePremiumForStrike(uint strikeId) external view returns (uint call, uint put);
 
     function getFreeLiquidity() external view returns (uint freeLiquidity);
 
     function getMarketParams() external view returns (MarketParams memory);
 
-    function getExchangeParams()
-        external
-        view
-        returns (ExchangeRateParams memory);
+    function getExchangeParams() external view returns (ExchangeRateParams memory);
 
     /////////////////////////////
     // Option Position Getters //
@@ -165,9 +152,7 @@ interface ILyraBase {
         uint amount
     ) external view returns (uint);
 
-    function getMinCollateralForPosition(
-        uint positionId
-    ) external view returns (uint);
+    function getMinCollateralForPosition(uint positionId) external view returns (uint);
 
     function getMinCollateralForStrike(
         OptionType optionType,
@@ -186,6 +171,16 @@ interface ILyraBase {
     function _isLong(OptionType optionType) external pure returns (bool);
 
     function _isOutsideDeltaCutoff(uint strikeId) external view returns (bool);
+
+    function getRequiredCollateral(
+        uint _size,
+        uint _optionType,
+        uint _positionId,
+        uint _strikePrice,
+        uint _strikeExpiry,
+        uint _collatBuffer,
+        uint _collatPercent
+    ) external view returns (uint collateralToAdd, uint setCollateralTo);
 
     function _getBufferCollateral(
         uint _strikePrice,
@@ -206,10 +201,7 @@ interface ILyraBase {
     // GWAV //
     //////////
 
-    function volGWAV(
-        uint strikeId,
-        uint secondsAgo
-    ) external view returns (uint);
+    function volGWAV(uint strikeId, uint secondsAgo) external view returns (uint);
 
     /************************************************
      *  LYRA QUOTER - GET TOTAL PRICING
