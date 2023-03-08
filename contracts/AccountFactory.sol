@@ -9,8 +9,8 @@ import "./AccountOrder.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract AccountFactory is MinimalProxyFactory {
-    /// @notice LyraAccountOrder contract acting as user's account
-    AccountOrder public immutable implementation;
+    /// @notice LyraAccountOrder contract address
+    address public immutable implementation;
 
     /// @notice ERC20 token used to interact with markets
     IERC20 public immutable quoteAsset;
@@ -33,18 +33,20 @@ contract AccountFactory is MinimalProxyFactory {
 
     /**
      * @notice
+     * @param _implementation account order implementation
      * @param _quoteAsset margin asset
      * @param _ethLyraBase lyra eth mm adapter / quoter to
      * @param _btcLyraBase lyra btc mm adapter / quoter to
      * @param _ops gelato ops address
      */
     constructor(
+        address _implementation,
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
         address payable _ops
     ) {
-        implementation = new AccountOrder();
+        implementation = _implementation;
         quoteAsset = IERC20(_quoteAsset);
         ethLyraBase = _ethLyraBase;
         btcLyraBase = _btcLyraBase;
@@ -56,9 +58,7 @@ contract AccountFactory is MinimalProxyFactory {
      * @return accountAddress account order contract proxy address
      */
     function newAccount() external returns (address payable accountAddress) {
-        accountAddress = payable(
-            _cloneAsMinimalProxy(address(implementation), "Creation failure")
-        );
+        accountAddress = payable(_cloneAsMinimalProxy(address(implementation), "Creation failure"));
         AccountOrder account = AccountOrder(accountAddress);
         account.initialize(address(quoteAsset), ethLyraBase, btcLyraBase, ops);
         account.transferOwnership(msg.sender);
