@@ -10,13 +10,14 @@
   "scripts": {
     "compile": "hardhat compile",
     "chain": "hardhat node --hostname 0.0.0.0 --network hardhat --no-deploy",
+    "accounts": "hardhat accounts",
     "test": "hardhat test --network hardhat",
     "clean": "hardhat clean && rimraf ./cache && rimraf ./artifacts && rimraf ./cache-ovm && rimraf ./artifacts-ovm && rimraf ./typechain-types",
     "prettier:ts": "prettier --config .prettierrc --write \"**/*.{js,ts}\"",
     "deploy:lyra": "hardhat run scripts/lyra/localDeploy.ts",
-    "deploy:local": "hardhat deploy --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json",
-    "post:local": "hardhat run scripts/subgraph/publish.js",
-    "e2e": "hardhat run scripts/e2e/test.ts "
+    "deploy:local": "hardhat deploy --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags local && yarn postDeploy",
+    "postDeploy": "hardhat run scripts/subgraph/publish.js",
+    "e2e": "hardhat run scripts/e2e/local.ts --network localhost"
   },
   "devDependencies": {
     "@ethersproject/abi": "^5.4.7",

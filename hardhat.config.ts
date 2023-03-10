@@ -46,17 +46,11 @@ const config = {
     },
     networks: {
         hardhat: {
-            saveDeployments: true,
-            forking: {
-                url: process.env.NODE_URL_L2,
-                blockNumber: 20000000
-            },
             accounts: {
                 count: 10,
                 accountsBalance: "10000000000000000000000", // 10ETH (Default)
             },
             deploy: ['deploy/local'],
-            deployments: ['deployments']
         }
     },
     namedAccounts: {
@@ -78,6 +72,7 @@ const config = {
     },
     dependencyCompiler: {
         paths: lyraContractPaths,
+
     },
     ethernal: {
         email: process.env.ETHERNAL_EMAIL,
