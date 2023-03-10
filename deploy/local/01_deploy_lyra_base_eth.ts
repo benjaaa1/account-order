@@ -13,7 +13,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
 
     const _lyraQuoter = await ethers.getContract('LyraQuoter');
 
-    await deploy("LyraBaseBTC", {
+    await deploy("LyraBaseETH", {
         from: deployer,
         contract: 'LyraBase',
         args: [

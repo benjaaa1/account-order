@@ -1,6 +1,5 @@
 import { getMarketDeploys, getGlobalDeploys } from "@lyrafinance/protocol";
 import markets from "../../constants/markets.json";
-import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 module.exports = async (hre: HardhatRuntimeEnvironment) => {
@@ -8,11 +7,10 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const { deploy } = deployments;
     const { deployer } = await getNamedAccounts();
 
-    const lyraMarket = getMarketDeploys('local', 'sETH');
-    const lyraGlobal = getGlobalDeploys('local');
-
-    const _lyraQuoter = await ethers.getContract('LyraQuoter');
-
+    const lyraMarket = getMarketDeploys('mainnet-ovm', 'sBTC');
+    const lyraGlobal = getGlobalDeploys('mainnet-ovm');
+    // https://github.com/blue-searcher/lyra-quoter
+    const _lyraQuoter = "0xa60D490C1984D91AB2E43e5b891b2AB8Ab790752";
     await deploy("LyraBaseBTC", {
         from: deployer,
         contract: 'LyraBase',
@@ -26,7 +24,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
             lyraMarket.OptionMarketPricer.address,
             lyraMarket.OptionGreekCache.address,
             lyraMarket.GWAVOracle.address,
-            _lyraQuoter.address
+            _lyraQuoter
         ],
         log: true,
         libraries: {
@@ -35,4 +33,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["local"];
+module.exports.tags = ["LyraBaseBTC"];

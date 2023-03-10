@@ -6,7 +6,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const { deployments, getNamedAccounts } = hre;
     const { deploy, all } = deployments;
     const { deployer } = await getNamedAccounts();
-    const lyraGlobal = getGlobalDeploys('local');
+    const lyraGlobal = getGlobalDeploys('mainnet-ovm');
 
     const deployed = await all();
     const lyraBaseETH = deployed["LyraBaseETH"];
@@ -14,7 +14,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const GELATO_OPS = "0x340759c8346A1E6Ed92035FB8B6ec57cE1D82c2c";
 
     const accountOrderImpl = await ethers.getContract('AccountOrder');
-    console.log({ usd: lyraGlobal.QuoteAsset.address })
+
     await deploy("AccountFactory", {
         from: deployer,
         args: [
@@ -28,4 +28,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["local"];
+module.exports.tags = ["AccountFactory"];
