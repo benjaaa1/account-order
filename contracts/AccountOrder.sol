@@ -137,7 +137,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @notice place order
      * @param _trade trade details
      */
-    function placeOrder(StrikeTrade memory _trade) public onlyOwner returns (uint) {
+    function placeOrder(StrikeTrade memory _trade) external payable onlyOwner returns (uint) {
         if (address(this).balance < 1 ether / 100) {
             revert InsufficientEthBalance(address(this).balance, 1 ether / 100);
         }
