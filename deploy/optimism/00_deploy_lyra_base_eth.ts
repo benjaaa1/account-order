@@ -6,6 +6,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const { deployments, getNamedAccounts, getChainId } = hre;
     const { deploy } = deployments;
     const { deployer } = await getNamedAccounts();
+    console.log({ deployer })
     const _chainId = await getChainId();
     console.log(_chainId);
     const lyraMarket = getMarketDeploys('mainnet-ovm', 'sETH');
@@ -35,4 +36,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["LyraBaseETH"];
+module.exports.tags = ["optimism"];

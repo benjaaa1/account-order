@@ -12,4 +12,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["AccountOrder"];
+module.exports.tags = ["AccountFactory"];

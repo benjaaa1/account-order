@@ -20,7 +20,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
         args: [
             accountOrderImpl.address,
             lyraGlobal.QuoteAsset.address,
-            lyraBaseETH.address, // synthetix adapter
+            lyraBaseETH.address,
             lyraBaseBTC.address,
             GELATO_OPS
         ],

@@ -16,8 +16,12 @@
     "prettier:ts": "prettier --config .prettierrc --write \"**/*.{js,ts}\"",
     "deploy:lyra": "hardhat run scripts/lyra/localDeploy.ts",
     "deploy:local": "hardhat deploy --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags local && yarn postDeploy",
+    "deploy:optimism": "hardhat deploy --network optimistic-mainnet --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags AccountFactory && yarn postDeploy",
     "postDeploy": "hardhat run scripts/subgraph/publish.js",
-    "e2e": "hardhat run scripts/e2e/local.ts --network localhost"
+    "e2e": "hardhat run scripts/e2e/local.ts --network localhost",
+    "verify:factory": "npx hardhat verify --network optimistic-mainnet --constructor-args scripts/verify/AccountFactory.js 0xf5eF76ffad699f4D7574F11Ff58fCe0Ac1B2b0Ca",
+    "verify:baseETH": "hardhat run scripts/verify/lyraBaseETH.ts --network optimistic-mainnet"
+
   },
   "devDependencies": {
     "@ethersproject/abi": "^5.4.7",
@@ -26,7 +30,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
     "@nomicfoundation/hardhat-toolbox": "^2.0.0",
     "@nomiclabs/hardhat-ethers": "npm:hardhat-deploy-ethers",
-    "@nomiclabs/hardhat-etherscan": "^3.0.0",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
     "@typechain/ethers-v5": "^10.1.0",
     "@typechain/hardhat": "^6.1.2",
     "@types/chai": "^4.2.0",

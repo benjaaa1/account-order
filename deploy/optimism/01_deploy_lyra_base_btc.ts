@@ -15,7 +15,7 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
         from: deployer,
         contract: 'LyraBase',
         args: [
-            markets.ETH,
+            markets.BTC,
             lyraGlobal.SynthetixAdapter.address, // synthetix adapter
             lyraMarket.OptionToken.address,
             lyraMarket.OptionMarket.address,
@@ -33,4 +33,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["LyraBaseBTC"];
+module.exports.tags = ["AccountFactory"];
