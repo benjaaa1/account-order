@@ -5,7 +5,7 @@ import "@nomiclabs/hardhat-ethers";
 import "hardhat-dependency-compiler";
 import "@nomiclabs/hardhat-waffle";
 import { lyraContractPaths } from "@lyrafinance/protocol/dist/test/utils/package/index-paths";
-// import 'hardhat-ethernal';
+import "@nomiclabs/hardhat-etherscan";
 
 dotenv.config();
 
@@ -32,16 +32,7 @@ const config = {
                         runs: 1,
                     },
                 },
-            },
-            {
-                version: "^0.8.9",
-                settings: {
-                    optimizer: {
-                        enabled: true,
-                        runs: 1,
-                    },
-                },
-            },
+            }
         ],
     },
     networks: {
@@ -51,7 +42,21 @@ const config = {
                 accountsBalance: "10000000000000000000000", // 10ETH (Default)
             },
             deploy: ['deploy/local'],
-        }
+        },
+        "optimistic-mainnet": {
+            url: process.env.NODE_URL_L2
+                ? process.env.NODE_URL_L2
+                : "",
+            accounts: process.env.MAINNET_DEPLOY_PK
+                ? [process.env.MAINNET_DEPLOY_PK]
+                : undefined,
+            verify: {
+                etherscan: {
+                    apiUrl: "https://api-optimistic.etherscan.io",
+                },
+            },
+            deploy: ['deploy/optimism'],
+        },
     },
     namedAccounts: {
         deployer: {
@@ -74,9 +79,12 @@ const config = {
         paths: lyraContractPaths,
 
     },
-    ethernal: {
-        email: process.env.ETHERNAL_EMAIL,
-        password: process.env.ETHERNAL_PASSWORD,
+    gasReporter: {
+        enabled: true,
+        currency: "USD",
+    },
+    etherscan: {
+        apiKey: process.env.ETHERSCAN_API_KEY
     }
 };
 
