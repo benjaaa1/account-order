@@ -283,24 +283,26 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     /**
      * @notice check validity of limit vol orderid
      * @param _trade trade details
-     * @return valid
-     * @return premium
+     * @return isValid valid
+     * @return totalPremium premium
      */
-    function validLimitVolOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
+    function validLimitVolOrder(
+        StrikeTrade memory _trade
+    ) internal view returns (bool isValid, uint totalPremium) {
         uint[] memory strikeId = _toDynamic(_trade.strikeId);
         uint vol = lyraBase(_trade.market).getVols(strikeId)[0];
         bool isLong = _isLong(_trade.optionType);
 
         if (isLong) {
             if (_trade.targetVolatility < vol) {
-                (uint256 totalPremium, ) = getQuote(_trade.strikeId, _trade);
+                (totalPremium, ) = getQuote(_trade.strikeId, _trade);
                 return (true, totalPremium);
             } else {
                 return (false, 0);
             }
         } else {
             if (_trade.targetVolatility > vol) {
-                (uint256 totalPremium, ) = getQuote(_trade.strikeId, _trade);
+                (totalPremium, ) = getQuote(_trade.strikeId, _trade);
                 return (true, totalPremium);
             } else {
                 return (false, 0);
@@ -449,7 +451,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @return totalCost
      */
     function buyStrike(StrikeTrade memory _trade, uint _maxPremium) internal returns (uint, uint) {
-        uint __maxPremium = _maxPremium + (_maxPremium.multiplyDecimal(1000000000000000));
+        // uint __maxPremium = _maxPremium + (_maxPremium.multiplyDecimal(1000000000000000));
         // perform trade to long
         TradeResult memory result = openPosition(
             _trade.market,
@@ -462,13 +464,13 @@ contract AccountOrder is MinimalProxyable, OpsReady {
                 amount: _trade.size,
                 setCollateralTo: 0,
                 minTotalCost: 0,
-                maxTotalCost: __maxPremium, // add slippage for testing
+                maxTotalCost: _maxPremium, // add slippage for testing
                 // set to zero address if don't want to wait for whitelist
                 rewardRecipient: address(owner())
             })
         );
 
-        if (result.totalCost > __maxPremium) {
+        if (result.totalCost > _maxPremium) {
             revert PremiumAboveExpected(result.totalCost, _maxPremium);
         }
 
