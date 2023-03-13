@@ -10,3 +10,4 @@ cache
 artifacts
 
 .lyra
+contracts/hardhat-dependency-compiler

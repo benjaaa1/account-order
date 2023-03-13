@@ -77,6 +77,7 @@ const config = {
     },
     dependencyCompiler: {
         paths: lyraContractPaths,
+        keep: true
 
     },
     gasReporter: {
