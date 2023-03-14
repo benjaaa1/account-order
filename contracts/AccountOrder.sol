@@ -341,25 +341,6 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     function validStopLossOrder(StrikeTrade memory _trade) internal view returns (bool, uint) {
         (uint256 totalPremiumClose, ) = getQuote(_trade.strikeId, _trade);
 
-        /**
-         * @dev if original position is long we need a short to close
-         * targetPrice will usually the max the user wants to pay to close the
-         * position
-         * example for a long
-         * Buy $1800 ETH Call for $18 / contract
-         * Trade is going against me
-         * As price to close increases i lose more
-         * $20 to close
-         * $21 to close
-         * if it's $21.50 stop loss and close it and my target was $21.40
-         * if 21.40 and price 21.50 // close it
-         * @dev if original position is short we need to buy/long position to close
-         * targetprice will usually (in ui we can show)
-         * $12 targetPrice and total premium close is $13
-         * shouldve closed a while ago
-         * $12 targetPrice and totalpremium is $11
-         */
-
         if (_trade.targetPrice < totalPremiumClose) {
             return (true, totalPremiumClose);
         } else {
