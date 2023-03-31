@@ -20,7 +20,7 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-pragma solidity ^0.8.16;
+pragma solidity 0.8.9;
 
 /**
  * @title SignedDecimalMath
@@ -97,11 +97,7 @@ library SignedDecimalMath {
      * Rounding is useful when you need to retain fidelity for small decimal numbers
      * (eg. small fractions or percentages).
      */
-    function _multiplyDecimalRound(
-        int x,
-        int y,
-        int precisionUnit
-    ) private pure returns (int) {
+    function _multiplyDecimalRound(int x, int y, int precisionUnit) private pure returns (int) {
         /* Divide by UNIT to remove the extra factor introduced by the product. */
         int quotientTimesTen = (x * y) / (precisionUnit / 10);
         return _roundDividingByTen(quotientTimesTen);
@@ -119,10 +115,7 @@ library SignedDecimalMath {
      * Rounding is useful when you need to retain fidelity for small decimal numbers
      * (eg. small fractions or percentages).
      */
-    function multiplyDecimalRoundPrecise(
-        int x,
-        int y
-    ) internal pure returns (int) {
+    function multiplyDecimalRoundPrecise(int x, int y) internal pure returns (int) {
         return _multiplyDecimalRound(x, y, PRECISE_UNIT);
     }
 
@@ -164,11 +157,7 @@ library SignedDecimalMath {
      * is evaluated, so the product of x and the specified precision unit must
      * be less than 2**256. The result is rounded to the nearest increment.
      */
-    function _divideDecimalRound(
-        int x,
-        int y,
-        int precisionUnit
-    ) private pure returns (int) {
+    function _divideDecimalRound(int x, int y, int precisionUnit) private pure returns (int) {
         int resultTimesTen = (x * (precisionUnit * 10)) / y;
         return _roundDividingByTen(resultTimesTen);
     }
@@ -193,10 +182,7 @@ library SignedDecimalMath {
      * is evaluated, so the product of x and the high precision unit must
      * be less than 2**256. The result is rounded to the nearest increment.
      */
-    function divideDecimalRoundPrecise(
-        int x,
-        int y
-    ) internal pure returns (int) {
+    function divideDecimalRoundPrecise(int x, int y) internal pure returns (int) {
         return _divideDecimalRound(x, y, PRECISE_UNIT);
     }
 
@@ -211,8 +197,7 @@ library SignedDecimalMath {
      * @dev Convert a high precision decimal to a standard decimal representation.
      */
     function preciseDecimalToDecimal(int i) internal pure returns (int) {
-        int quotientTimesTen = i /
-            (UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR / 10);
+        int quotientTimesTen = i / (UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR / 10);
         return _roundDividingByTen(quotientTimesTen);
     }
 }

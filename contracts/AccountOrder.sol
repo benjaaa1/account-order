@@ -1,11 +1,16 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.9;
+// SPDX-License-Identifier: ISC
+pragma solidity 0.8.9;
 
 import "hardhat/console.sol";
 
 // lyra base interface
 import "./interfaces/ILyraBase.sol";
 import "./interfaces/gelato/IOps.sol";
+
+import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
+import {OptionToken} from "@lyrafinance/protocol/contracts/OptionToken.sol";
+
+import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
 
 // libraries
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -16,7 +21,7 @@ import "./synthetix/SafeDecimalMath.sol";
 import {MinimalProxyable} from "./utils/MinimalProxyable.sol";
 import {OpsReady} from "./utils/OpsReady.sol";
 
-contract AccountOrder is MinimalProxyable, OpsReady {
+contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
     using SafeDecimalMath for uint;
 
     /************************************************
@@ -24,60 +29,6 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      ***********************************************/
 
     uint internal constant COLLATERAL_BUFFER = 10 * 10 ** 6; // 10%
-
-    enum OrderTypes {
-        MARKET,
-        LIMIT_PRICE,
-        LIMIT_VOL,
-        TAKE_PROFIT,
-        STOP_LOSS
-    }
-
-    enum OptionType {
-        LONG_CALL,
-        LONG_PUT,
-        SHORT_CALL_BASE,
-        SHORT_CALL_QUOTE,
-        SHORT_PUT_QUOTE
-    }
-
-    struct StrikeTrade {
-        OrderTypes orderType;
-        bytes32 market;
-        uint iterations;
-        uint collatPercent;
-        uint optionType;
-        uint strikeId;
-        uint size;
-        uint positionId;
-        uint tradeDirection;
-        uint targetPrice;
-        uint targetVolatility;
-    }
-
-    struct StrikeTradeOrder {
-        StrikeTrade strikeTrade;
-        bytes32 gelatoTaskId;
-        uint committedMargin;
-    }
-
-    struct TradeInputParameters {
-        uint strikeId;
-        uint positionId;
-        uint iterations;
-        uint optionType;
-        uint amount;
-        uint setCollateralTo;
-        uint minTotalCost;
-        uint maxTotalCost;
-        address rewardRecipient;
-    }
-
-    struct TradeResult {
-        uint positionId;
-        uint totalCost;
-        uint totalFee;
-    }
 
     /************************************************
      *  INIT STATE
@@ -88,7 +39,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
     mapping(bytes32 => ILyraBase) public lyraBases;
 
     /************************************************
-     *  STATE
+     *  STATE - LIMIT AND TRIGGER ORDERS
      ***********************************************/
 
     mapping(uint => StrikeTradeOrder) public orders;
@@ -97,6 +48,18 @@ contract AccountOrder is MinimalProxyable, OpsReady {
 
     /// @notice margin locked for future events (ie. limit orders)
     uint256 public committedMargin;
+
+    /************************************************
+     *  STATE - POSITIONS - LYRA
+     ***********************************************/
+
+    mapping(uint => OptionToken.OptionPosition) public positions;
+
+    /************************************************
+     *  STATE - POSITIONS - SPREAD MARKET
+     ***********************************************/
+
+    mapping(uint => uint) public spreadPositions;
 
     /************************************************
      *  CONSTRUCTOR
@@ -126,9 +89,30 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         quoteAsset = IERC20(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
-        _transferOwnership(msg.sender);
         ops = _ops;
+        _transferOwnership(msg.sender);
     }
+
+    /************************************************
+     *  LYRA REWARDS - STAKE AND COLLECT
+     ***********************************************/
+
+    /**
+     * @notice Lyra can be staked
+     */
+    function stakeLyra(uint _amount) external onlyOwner {}
+
+    function unstakeLyra(uint _amount) external onlyOwner {}
+
+    /**
+     * @notice Lyra rewards can be collected
+     */
+    function collectRewards() external onlyOwner {}
+
+    /**
+     * @dev This goes in the Spread Option Market Contract set at Construct
+     * @dev maybe can add a modifier to only allow accounts?
+     */
 
     /************************************************
      *  ORDERS
@@ -144,6 +128,9 @@ contract AccountOrder is MinimalProxyable, OpsReady {
 
         // allow optionmarket to use funds
         address optionMarket = lyraBase(_trade.market).getOptionMarket();
+        /**
+         * @dev check return value of approve
+         */
         quoteAsset.approve(address(optionMarket), type(uint).max);
 
         // trigger order should have positionid &&
@@ -394,6 +381,8 @@ contract AccountOrder is MinimalProxyable, OpsReady {
         uint _strikePrice,
         uint _expiry
     ) internal view returns (uint collateralToAdd, uint setCollateralTo) {
+        // collateralToAdd user required funds
+        // setCollateralTo openPostion
         (collateralToAdd, setCollateralTo) = lyraBase(_trade.market).getRequiredCollateral(
             _trade.size,
             _trade.optionType,
@@ -515,7 +504,12 @@ contract AccountOrder is MinimalProxyable, OpsReady {
             TradeResult({
                 positionId: result.positionId,
                 totalCost: result.totalCost,
-                totalFee: result.totalFee
+                totalFee: result.totalFee,
+                market: market,
+                optionType: params.optionType,
+                amount: params.amount,
+                setCollateralTo: params.setCollateralTo,
+                strikeId: params.strikeId
             });
     }
 
@@ -524,7 +518,7 @@ contract AccountOrder is MinimalProxyable, OpsReady {
      * @param params params to close trade on lyra
      * @return result of trade
      */
-    function closePosition(
+    function _closePosition(
         bytes32 market,
         TradeInputParameters memory params
     ) internal returns (TradeResult memory) {
@@ -536,9 +530,14 @@ contract AccountOrder is MinimalProxyable, OpsReady {
 
         return
             TradeResult({
+                market: market,
                 positionId: result.positionId,
                 totalCost: result.totalCost,
-                totalFee: result.totalFee
+                totalFee: result.totalFee,
+                optionType: params.optionType,
+                amount: params.amount,
+                setCollateralTo: params.setCollateralTo,
+                strikeId: params.strikeId
             });
     }
 

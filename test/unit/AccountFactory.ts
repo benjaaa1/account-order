@@ -6,6 +6,7 @@ import {
     AccountOrder,
     AccountOrder__factory,
     LyraBase,
+    SpreadOptionMarket,
 } from "../../typechain-types";
 import { ZERO_ADDRESS } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 
@@ -16,6 +17,7 @@ const GELATO_OPS = "0xB3f5503f93d5Ef84b06993a1975B9D21B962892F";
 let accountFactory: AccountFactory;
 let accountOrderImpl: AccountOrder;
 let accountOrder: AccountOrder;
+let spreadOptionMarket: SpreadOptionMarket;
 
 describe("AccountFactory", async () => {
     let deployer: SignerWithAddress;
@@ -25,20 +27,26 @@ describe("AccountFactory", async () => {
         [deployer, owner] = await ethers.getSigners();
     });
 
+    before("deploy spread option market", async () => {
+        const SpreadOptionMarket = await ethers.getContractFactory("SpreadOptionMarket");
+        spreadOptionMarket = (await SpreadOptionMarket.connect(deployer).deploy()) as SpreadOptionMarket;
+    })
+
     before("deploy account order implementation", async () => {
         const AccountOrder = await ethers.getContractFactory("AccountOrder");
-        accountOrderImpl = await AccountOrder.connect(deployer).deploy();
+        accountOrderImpl = (await AccountOrder.connect(deployer).deploy()) as AccountOrder;
     })
 
     before("deploy account order factory", async () => {
         const AccountFactoryFactory = await ethers.getContractFactory("AccountFactory");
-        accountFactory = await AccountFactoryFactory.connect(deployer).deploy(
+        accountFactory = (await AccountFactoryFactory.connect(deployer).deploy(
             accountOrderImpl.address,
             SUSD_PROXY,
             ZERO_ADDRESS,
             ZERO_ADDRESS,
+            spreadOptionMarket.address,
             GELATO_OPS
-        );
+        )) as AccountFactory;
     });
 
     describe("Account factory settings", function () {

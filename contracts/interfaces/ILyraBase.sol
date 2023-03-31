@@ -109,6 +109,8 @@ interface ILyraBase {
 
     function getOptionMarket() external view returns (address);
 
+    function getOptionToken() external view returns (address);
+
     function getLiveBoards() external view returns (uint[] memory liveBoards);
 
     function getBoard(uint boardId) external view returns (Board memory);

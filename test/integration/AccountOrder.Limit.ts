@@ -6,6 +6,7 @@ import {
   TestSystem,
   getMarketDeploys,
   getGlobalDeploys,
+  lyraEvm,
 } from "@lyrafinance/protocol";
 import { fromBN, toBN } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 import { DEFAULT_PRICING_PARAMS } from "@lyrafinance/protocol/dist/test/utils/defaultParams";
@@ -14,10 +15,12 @@ import { PricingParametersStruct } from "@lyrafinance/protocol/dist/typechain-ty
 import {
   AccountFactory,
   AccountOrder,
+  AccountOrder__factory,
   IOps__factory,
   LyraBase,
   LyraQuoter,
   MockERC20,
+  SpreadOptionMarket,
 } from "../../typechain-types";
 import { LyraGlobal } from "@lyrafinance/protocol/dist/test/utils/package/parseFiles";
 import { impersonateAccount, setBalance } from "@nomicfoundation/hardhat-network-helpers";
@@ -29,6 +32,7 @@ import {
   Transaction,
 } from "ethers";
 import { Address } from "hardhat-deploy/types";
+import { ITradeTypes } from "../../typechain-types/contracts/AccountOrder";
 
 const MARKET_KEY_ETH = ethers.utils.formatBytes32String("ETH");
 
@@ -40,6 +44,7 @@ let lyraQuoter: LyraQuoter;
 let accountFactory: AccountFactory;
 let accountOrderImpl: AccountOrder;
 let accountOrder: AccountOrder;
+let spreadOptionMarket: SpreadOptionMarket;
 
 let deployer: SignerWithAddress;
 let owner: SignerWithAddress;
@@ -105,9 +110,9 @@ describe("account order integration", async () => {
       libraries: { BlackScholes: lyraTestSystem.blackScholes.address },
     });
 
-    lyraQuoter = await LyraQuoterFactory.connect(deployer).deploy(
+    lyraQuoter = (await LyraQuoterFactory.connect(deployer).deploy(
       lyraTestSystem.lyraRegistry.address
-    );
+    )) as LyraQuoter;
 
     const LyraBaseETHFactory = await ethers.getContractFactory("LyraBase", {
       libraries: { BlackScholes: lyraTestSystem.blackScholes.address },
@@ -129,6 +134,10 @@ describe("account order integration", async () => {
     const boards = await lyraTestSystem.optionMarket.getLiveBoards();
 
     boardId = boards[0];
+
+    await lyraTestSystem.optionGreekCache.updateBoardCachedGreeks(boardId);
+
+    await lyraEvm.fastForward(600);
   });
 
   before("set strikes array", async () => {
@@ -137,19 +146,23 @@ describe("account order integration", async () => {
 
   before("deploy account order implementation", async () => {
     const AccountOrder = await ethers.getContractFactory("AccountOrder");
-    accountOrderImpl = await AccountOrder.connect(deployer).deploy();
+    accountOrderImpl = (await AccountOrder.connect(deployer).deploy()) as AccountOrder;
   })
 
-
+  before("deploy spread option market", async () => {
+    const SpreadOptionMarket = await ethers.getContractFactory("SpreadOptionMarket");
+    spreadOptionMarket = (await SpreadOptionMarket.connect(deployer).deploy()) as SpreadOptionMarket;
+  })
   before("deploy account order factory", async () => {
     const AccountOrderFactory = await ethers.getContractFactory("AccountFactory");
-    accountFactory = await AccountOrderFactory.connect(deployer).deploy(
+    accountFactory = (await AccountOrderFactory.connect(deployer).deploy(
       accountOrderImpl.address,
       lyraTestSystem.snx.quoteAsset.address,
       lyraBaseETH.address,
       lyraBaseETH.address,
+      spreadOptionMarket.address,
       GELATO_OPS
-    );
+    )) as AccountFactory;
   });
 
   before("setup new account", async () => {
@@ -235,7 +248,7 @@ describe("account order integration", async () => {
     })
 
     before("place order", async () => {
-      const strikeTrade: AccountOrder.StrikeTradeStruct = buildOrder(
+      const strikeTrade: ITradeTypes.StrikeTradeStruct = buildOrder(
         2,
         toBN("2000"),
         toBN(".80"),
@@ -280,7 +293,7 @@ describe("account order integration", async () => {
 
     beforeEach("place limit long order", async () => {
       // submit order to gelato
-      const strikeTrade: AccountOrder.StrikeTradeStruct = buildOrder(
+      const strikeTrade: ITradeTypes.StrikeTradeStruct = buildOrder(
         2, // order type (limitprice 1 limit vol 2)
         toBN("2000"), // target premium
         toBN(".80"), // target volatility
@@ -354,7 +367,7 @@ describe("account order integration", async () => {
     });
 
     before("place order", async () => {
-      const strikeTrade: AccountOrder.StrikeTradeStruct = buildOrder(
+      const strikeTrade: ITradeTypes.StrikeTradeStruct = buildOrder(
         2,
         toBN("2000"),
         toBN(".80"),
@@ -396,7 +409,7 @@ describe("account order integration", async () => {
 
     beforeEach("place limit short order", async () => {
       // submit order to gelato
-      const strikeTrade: AccountOrder.StrikeTradeStruct = buildOrder(
+      const strikeTrade: ITradeTypes.StrikeTradeStruct = buildOrder(
         2, // order type (limitprice 1 limit vol 2)
         toBN("2000"), // target premium
         toBN(".95"), // target volatility
@@ -458,7 +471,6 @@ describe("account order integration", async () => {
       );
     });
   });
-
 
 
 });
@@ -523,7 +535,7 @@ const buildOrder = (
   _targetVol: BigNumber,
   _strikeId: BigNumber,
   _optionType: number
-): AccountOrder.StrikeTradeStruct => {
+): ITradeTypes.StrikeTradeStruct => {
   return {
     collatPercent: toBN(".45"),
     iterations: 3,
@@ -536,5 +548,7 @@ const buildOrder = (
     tradeDirection: 0, // OPEN
     targetPrice: _targetPrice,
     targetVolatility: _targetVol,
+    collateralToAdd: toBN('0'),
+    setCollateralTo: toBN('0')
   };
 };

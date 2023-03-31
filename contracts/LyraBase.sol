@@ -190,6 +190,10 @@ contract LyraBase {
         return address(optionMarket);
     }
 
+    function getOptionToken() external view returns (address) {
+        return address(optionToken);
+    }
+
     function getLiveBoards() internal view returns (uint[] memory liveBoards) {
         liveBoards = optionMarket.getLiveBoards();
     }
@@ -224,6 +228,7 @@ contract LyraBase {
                 boardIv: board.iv
             });
         }
+
         return allStrikes;
     }
 
@@ -427,7 +432,7 @@ contract LyraBase {
     /**
      * @dev use latest optionMarket delta cutoff to determine whether trade delta is out of bounds
      */
-    function _isOutsideDeltaCutoff(uint strikeId) internal view returns (bool) {
+    function _isOutsideDeltaCutoff(uint strikeId) public view returns (bool) {
         MarketParams memory marketParams = getMarketParams();
         int callDelta = getDeltas(_toDynamic(strikeId))[0];
         return
@@ -542,6 +547,7 @@ contract LyraBase {
             _amount
         );
         require(minCollat > 0, "min collat must be more");
+
         uint minCollatWithBuffer = minCollat.multiplyDecimal(_collatBuffer);
 
         uint fullCollat = _getFullCollateral(_strikePrice, _amount, _optionType);
