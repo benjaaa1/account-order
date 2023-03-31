@@ -6,6 +6,7 @@ import "hardhat-dependency-compiler";
 import "@nomiclabs/hardhat-waffle";
 import { lyraContractPaths } from "@lyrafinance/protocol/dist/test/utils/package/index-paths";
 import "@nomiclabs/hardhat-etherscan";
+import 'solidity-coverage';
 
 dotenv.config();
 
@@ -26,6 +27,15 @@ const config = {
             },
             {
                 version: "0.8.9",
+                settings: {
+                    optimizer: {
+                        enabled: true,
+                        runs: 1,
+                    },
+                },
+            },
+            {
+                version: "^0.8.0",
                 settings: {
                     optimizer: {
                         enabled: true,
@@ -77,8 +87,7 @@ const config = {
     },
     dependencyCompiler: {
         paths: lyraContractPaths,
-        keep: true
-
+        // keep: true
     },
     gasReporter: {
         enabled: true,

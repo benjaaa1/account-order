@@ -12,3 +12,4 @@ artifacts
 .lyra
 contracts/hardhat-dependency-compiler
 sliter-results.json
+.vscode/slither-results.json

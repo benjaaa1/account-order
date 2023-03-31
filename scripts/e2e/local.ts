@@ -2,7 +2,7 @@ import { getGlobalDeploys } from "@lyrafinance/protocol";
 import { fromBN, toBN } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 import { ethers } from "hardhat";
 
-const _accountFactory = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+const _accountFactory = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82";
 const lyraGlobal = getGlobalDeploys('local');
 
 const test = async () => {
@@ -15,6 +15,7 @@ const test = async () => {
     const factory = await ethers.getContractAt('AccountFactory', _accountFactory)
 
     const newAccountTx = await factory.connect(owner).newAccount();
+
     const newAccount = await newAccountTx.wait();
 
     await timeout(5000)
@@ -29,14 +30,14 @@ const test = async () => {
 
     await timeout(5000)
 
-    // console.log('--------------- QUOTE & ACCOUNT ORDER INSTANCE----------------');
+    console.log('--------------- QUOTE & ACCOUNT ORDER INSTANCE----------------');
     // const accountOrderAddress = '0x8acd85898458400f7db866d53fcff6f0d49741ff';
     const quote = await ethers.getContractAt(lyraGlobal.QuoteAsset.abi, lyraGlobal.QuoteAsset.address);
     const accountOrder = await ethers.getContractAt('AccountOrder', accountOrderAddress);
     const quoteContractAddr = await accountOrder.quoteAsset();
     console.log({ quoteContractAddr })
     console.log({ quote: quote.address })
-    // console.log('--------------- INCREASE ALLOWANCE ----------------');
+    console.log('--------------- INCREASE ALLOWANCE ----------------');
     const allowanceTx = await quote.connect(owner).approve(accountOrder.address, toBN('1000'));
     await allowanceTx.wait();
     // deposit usd 

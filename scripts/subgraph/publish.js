@@ -6,7 +6,6 @@ const deploymentsDir = "./deployments";
 const publishDir = "../react-app/src/contracts";
 
 function publishContract(contractName, networkName) {
-  console.log({ contractName, networkName })
   try {
     let contract = fs
       .readFileSync(`${deploymentsDir}/${networkName}/${contractName}.json`)
@@ -17,8 +16,6 @@ function publishContract(contractName, networkName) {
     try {
       if (fs.existsSync(graphConfigPath)) {
         graphConfig = fs.readFileSync(graphConfigPath).toString();
-        console.log({ graphConfigPath})
-        console.log({ graphConfig })
       } else {
         graphConfig = "{}";
       }
@@ -28,7 +25,6 @@ function publishContract(contractName, networkName) {
 
     graphConfig = JSON.parse(graphConfig);
     graphConfig[`${networkName}_${contractName}Address`] = contract.address;
-    console.log({ graphConfig })
     const folderPath = graphConfigPath.replace("/config.json", "");
     if (!fs.existsSync(folderPath)) {
       fs.mkdirSync(folderPath);
@@ -57,7 +53,6 @@ async function main() {
     files.forEach(function (file) {
       if (file.indexOf(".json") >= 0) {
         const contractName = file.replace(".json", "");
-        console.log({ contractName })
         publishContract(contractName, directory);
       }
     });

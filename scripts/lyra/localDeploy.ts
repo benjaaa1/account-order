@@ -3,11 +3,8 @@ import { toBN } from '@lyrafinance/protocol/dist/scripts/util/web3utils';
 import { deployTestSystem } from '@lyrafinance/protocol/dist/test/utils/deployTestSystem';
 import { ethers } from 'hardhat';
 
-import { LyraGlobal, LyraMarket } from '@lyrafinance/protocol/dist/test/utils/package/parseFiles';
 import { DEFAULT_OPTION_MARKET_PARAMS } from '@lyrafinance/protocol/dist/test/utils/defaultParams';
 import { seedTestSystem } from '@lyrafinance/protocol/dist/test/utils/seedTestSystem';
-
-import ERC20ABI from './helpers/abi/ERC20ABI';
 
 // run this script using `yarn hardhat run --network local` if running directly from repo (not @lyrafinance/protocol)
 // otherwise OZ will think it's deploying to hardhat network and not local
