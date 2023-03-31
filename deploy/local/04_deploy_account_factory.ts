@@ -11,10 +11,11 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const deployed = await all();
     const lyraBaseETH = deployed["LyraBaseETH"];
     const lyraBaseBTC = deployed["LyraBaseBTC"];
+
     const GELATO_OPS = "0x340759c8346A1E6Ed92035FB8B6ec57cE1D82c2c";
 
     const accountOrderImpl = await ethers.getContract('AccountOrder');
-    console.log({ usd: lyraGlobal.QuoteAsset.address })
+
     await deploy("AccountFactory", {
         from: deployer,
         args: [
