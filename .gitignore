@@ -11,3 +11,4 @@ artifacts
 
 .lyra
 contracts/hardhat-dependency-compiler
+sliter-results.json
