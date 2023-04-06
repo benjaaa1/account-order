@@ -41,7 +41,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
     uint internal constant COLLATERAL_BUFFER = 1e18 * 1.1; // 100%
     uint internal constant COLLATERAL_REQUIRED = 1e18;
-    uint internal constant FEE = 1e18 * .01; // 2%
+    uint private constant ONE_PERCENT = 1e16;
 
     /************************************************
      *  INIT STATE
@@ -99,62 +99,26 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      ***********************************************/
 
     /**
-     * @notice validate increase is valid
-     * @dev Used to support ranged markets
-     * @dev must have a lyra position id
-     * @dev example 1 - previous position was valid - 2 Sell Call 2 Buy Call - .5 Sell Put 1 Buy Put
-     * @dev example 1 - new position is increasing 1 4 2 1 - 4 Sell Call 37 Buy Call - 3.5 Sell Put 3 Buy Put - valid
-     * @dev example 2 - previous position was valid - 2.5 Sell Call 3 Buy Call - 1.5 Sell Put 2 Buy Put
-     * @dev example 2 - new position is increasing 1 - 3.5 Sell Call 4 Buy Call - 2.5 Sell Put 3 Buy Put - valid
-     * @dev example 3 - previous position was valid - 1 sell call 1 buy call - 1 buy put
-     * @dev example 3 - new position is increasing 1 - 2 sell call 2 buy call - 1 sell put
-     * @dev last example would pass validIncrease check but wouldn't pass validSpread (even if it might be valid)
-     * @dev must also have position ids set
-     * @param _trades trades
-     */
-    function validIncrease(TradeInputParameters[] memory _trades) internal pure returns (bool) {
-        // all amount should be equal;
-        // uint longCalls;
-        // uint longPuts;
-        // uint shortCalls;
-        // uint shortPuts;
-
-        for (uint i = 0; i < _trades.length; i++) {
-            TradeInputParameters memory trade = _trades[i];
-            // if (i == 0) {
-            //     amount = trade.amount;
-            // }
-            // if (trade.amount != amount) {
-            //     return false;
-            // }
-            if (trade.positionId == 0) {
-                // should have lyra position id
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    error NotValidIncrease(TradeInputParameters[] _trades);
-
-    /**
      * @notice openPosition
      * @param _tradeInfo position and market info (0 if new position)
      * @param _trades trades
      * @param _maxLossPosted set by trader for spread position
      * @return positionId is a valid spread
-     * @return collateralUsed
+     * @return sellResults
+     * @return buyResults
      */
     function openPosition(
         TradeInfo memory _tradeInfo,
         TradeInputParameters[] memory _trades,
         uint _maxLossPosted
-    ) external nonReentrant returns (uint positionId, uint collateralUsed) {
+    )
+        external
+        nonReentrant
+        returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults)
+    {
         // if increasing previous spreadposition id
         // there needs to be more validity checks
         // 1. check increase of tradeinputparemeters is equal across the trades
-        // validIncrease(_trades)
         if (_tradeInfo.positionId > 0) {
             bool isValidIncrease = validIncrease(_trades);
             if (!isValidIncrease) {
@@ -177,12 +141,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
             revert NotValidSpread(_trades);
         }
 
-        (positionId, collateralUsed) = _openPosition(
-            _tradeInfo,
-            _trades,
-            totalSells,
-            _maxLossPosted
-        );
+        (positionId, sellResults, buyResults) = _openPosition(_tradeInfo, _trades, totalSells, _maxLossPosted);
     }
 
     /**
@@ -191,26 +150,31 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @param _spreadPositionId SpreadOptionToken.SpreadOptionPosition positionId
      * @param _params need to have max cost for close data and strikeid
      * @dev Trader must close all positions on lyra and then settles position on otus option market
+     * @dev to do - or they can close equal amounts on all
      * @dev require only trader/owner of position can execute
      */
     function closePosition(
         bytes32 _market,
         uint _spreadPositionId,
+        bool _isPartialClose,
         TradeInputParameters[] memory _params
     ) external nonReentrant {
         // @dev only trader can close
         // @dev only allowed to close full position and all positions
+        // need to check that _params are closing the same amount
+        if (_isPartialClose && !validPartialClose(_params)) {
+            revert NotValidPartialClose(_params);
+        }
 
-        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(
-            _spreadPositionId
-        );
+        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
 
         if (position.trader != msg.sender) {
             revert OnlyOwnerCanClose(msg.sender, position.trader);
         }
-
-        OptionToken optionToken = OptionToken(lyraBase(_market).getOptionToken());
-
+        // commented out for now to deal with deep stack later
+        // OptionToken optionToken = OptionToken(lyraBase(_market).getOptionToken());
+        // partial close doesn't  work because position collateral is 0!!!
+        // setCollateralTo needs to be set to greater than 0 remember a min. of 200 is needed.
         IOptionMarket.Result memory result;
 
         uint totalTraderProfit;
@@ -221,15 +185,22 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         for (uint i = 0; i < _params.length; i++) {
             TradeInputParameters memory param = _params[i];
 
-            (, , OptionMarket.OptionType optionType, , uint collateral, ) = optionToken.positions(
-                param.positionId
-            );
+            (, , OptionMarket.OptionType optionType, uint amount, uint collateral, ) = OptionToken(
+                lyraBase(_market).getOptionToken()
+            ).positions(param.positionId);
+
+            if (_isPartialClose && param.amount > amount) {
+                revert ClosingMoreThanInPosition();
+            }
+
+            // need to make sure param has correct close size for full position
+            if (!_isPartialClose) {
+                param.amount = amount;
+            }
 
             result = _closePosition(_market, param);
-            if (
-                optionType == OptionMarket.OptionType.LONG_CALL ||
-                optionType == OptionMarket.OptionType.LONG_PUT
-            ) {
+
+            if (optionType == OptionMarket.OptionType.LONG_CALL || optionType == OptionMarket.OptionType.LONG_PUT) {
                 totalTraderProfit = totalTraderProfit + result.totalCost;
                 totalFees = totalFees + result.totalFee;
             } else {
@@ -240,15 +211,17 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
 
         // @dev add max loss posted as credit to user
-        int traderTotal = SafeCast.toInt256(totalTraderProfit) - SafeCast.toInt256(totalFees);
-
+        int traderTotal = SafeCast.toInt256(totalTraderProfit); //  - SafeCast.toInt256(totalFees); fees from trader profits?
         // @dev totalPendingCollateral - collateral released by lyra market
         // @dev totalCollateral - collateral originally lent
-        int collateralToRecover = SafeCast.toInt256(totalCollateral) -
-            SafeCast.toInt256(totalPendingCollateral);
-
+        int collateralToRecover = SafeCast.toInt256(totalCollateral) - SafeCast.toInt256(totalPendingCollateral);
         // @dev return collaral to liquidity pool
         _routeCollateralToLP(totalPendingCollateral);
+
+        // if trader total is < 0 not allowed to close in market if partial
+        if (_isPartialClose && traderTotal <= 0) {
+            revert NotAbleToPartialClose();
+        }
 
         // @dev trader is in profit - likely collateral lost
         if (traderTotal > 0) {
@@ -277,13 +250,13 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
                     uint(SafeCast.toInt256(position.maxLossPosted) - collateralToRecover)
                 );
             } else {
-                _routeCollateralToLPFromUser(
-                    uint(collateralToRecover - SafeCast.toInt256(position.maxLossPosted))
-                );
+                _routeCollateralToLPFromUser(uint(collateralToRecover - SafeCast.toInt256(position.maxLossPosted)));
             }
         }
 
-        spreadOptionToken.settlePosition(_spreadPositionId);
+        if (!_isPartialClose) {
+            spreadOptionToken.settlePosition(_spreadPositionId);
+        }
     }
 
     /// @dev executes close position or force close position on lyra option market
@@ -346,9 +319,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     }
 
     // @dev helper method calculate additional premium received > expected
-    function _minPremium(
-        TradeInputParameters[] memory _shortTrades
-    ) internal pure returns (uint minPremium) {
+    function _minPremium(TradeInputParameters[] memory _shortTrades) internal pure returns (uint minPremium) {
         for (uint i = 0; i < _shortTrades.length; i++) {
             minPremium += _shortTrades[i].minTotalCost;
         }
@@ -363,38 +334,32 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @return positionId spread option position id
      */
     function _openPosition(
-        // uint _spreadPositionId,
-        // bytes32 _market,
         TradeInfo memory _tradeInfo,
         TradeInputParameters[] memory _trades,
         uint totalSells,
         uint _maxLossPosted
-    ) internal returns (uint positionId, uint totalCollateralToAdd) {
+    ) internal returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) {
         (
             uint[] memory sellStrikeIds,
             TradeInputParameters[] memory shortTrades,
             TradeInputParameters[] memory longTrades
         ) = buildTrades(_trades, totalSells);
 
-        uint totalSetCollateralTo;
-
-        (totalCollateralToAdd, totalSetCollateralTo) = _getTotalRequiredCollateral(
+        (uint totalCollateralToAdd, uint totalSetCollateralTo) = _getTotalRequiredCollateral(
             _tradeInfo.market,
             shortTrades,
             sellStrikeIds
         );
 
-        (
-            TradeResult[] memory sellResults,
-            TradeResult[] memory buyResults,
-            uint _maxLossPostedCollateral
-        ) = _executeTrade(
-                _tradeInfo.market,
-                totalCollateralToAdd,
-                _maxLossPosted,
-                shortTrades,
-                longTrades
-            );
+        uint _maxLossPostedCollateral;
+
+        (sellResults, buyResults, _maxLossPostedCollateral) = _executeTrade(
+            _tradeInfo.market,
+            totalCollateralToAdd,
+            _maxLossPosted,
+            shortTrades,
+            longTrades
+        );
 
         positionId = spreadOptionToken.openPosition(
             _tradeInfo,
@@ -426,11 +391,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         TradeInputParameters[] memory longTrades
     )
         internal
-        returns (
-            TradeResult[] memory sellResults,
-            TradeResult[] memory buyResults,
-            uint maxLossPostedCollateral
-        )
+        returns (TradeResult[] memory sellResults, TradeResult[] memory buyResults, uint maxLossPostedCollateral)
     {
         uint actualCost;
         uint fee;
@@ -447,16 +408,15 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
         // why are we adding here the premium
         // if user posts $2000 as max loss (dont add premium because it's already taken into account so need to do some math there)
-        maxLossPostedCollateral = _maxLossPosted + premiumCollected;
+        maxLossPostedCollateral = _maxLossPosted; // + premiumCollected;
         // @dev confirm max loss posted meets required
-        (uint maxLossCollateral, uint maxExpiry) = validMaxLossPosted(
-            _market,
-            sellResults,
-            buyResults
-        );
+        (uint maxLossCollateralRequirement, uint maxExpiry) = validMaxLossAndExpiries(_market, sellResults, buyResults);
+        console.log("maxLossPostedCollateral");
+        console.log(maxLossPostedCollateral);
+        console.log(maxLossCollateralRequirement);
 
-        if (maxLossCollateral > maxLossPostedCollateral) {
-            revert MaxLossRequirementNotMet(maxLossCollateral, _maxLossPosted);
+        if (maxLossCollateralRequirement > maxLossPostedCollateral) {
+            revert MaxLossRequirementNotMet(maxLossCollateralRequirement, _maxLossPosted);
         }
 
         /// @dev route fees from user to lp (calculate to )
@@ -489,7 +449,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         TradeInputParameters[] memory _longTrades
     ) private returns (TradeResult[] memory results, uint actualCost) {
         uint maxCost = _maxCost(_longTrades);
-        uint allow = quoteAsset.balanceOf(msg.sender);
+
         _routeCostsFromUser(maxCost);
 
         results = new TradeResult[](_longTrades.length);
@@ -501,9 +461,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
             IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(
-                convertedParams
-            );
+            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
 
             if (result.totalCost > trade.maxTotalCost) {
                 revert PremiumAboveExpected(result.totalCost, trade.maxTotalCost);
@@ -548,9 +506,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
             IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(
-                convertedParams
-            );
+            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
 
             if (result.totalCost < trade.minTotalCost) {
                 revert PremiumBelowExpected(result.totalCost, trade.minTotalCost);
@@ -569,11 +525,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
             premiumCollected += result.totalCost;
         }
-
-        // /// @dev return difference in actual cost from max cost set
-        // if (maxCost > actualCost) {
-        //     _routeExtraBackToUser(maxCost, actualCost);
-        // }
     }
 
     /************************************************
@@ -584,21 +535,12 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @dev Only settles if all lyra positions are settled
      * @param _spreadPositionId position id in SpreadOptionToken
      */
-    function settleOption(
-        uint _spreadPositionId
-    ) external nonReentrant returns (uint settlementInsolvency) {
-        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(
-            _spreadPositionId
-        );
-
-        console.log("maxLossPosted");
-        console.log(position.maxLossPosted);
+    function settleOption(uint _spreadPositionId) external nonReentrant returns (uint settlementInsolvency) {
+        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
 
         // reverts if positions are not settled in lyra
-        (
-            address trader,
-            SpreadOptionToken.SettledPosition[] memory optionPositions
-        ) = spreadOptionToken.checkLyraPositionsSettled(_spreadPositionId);
+        (address trader, SpreadOptionToken.SettledPosition[] memory optionPositions) = spreadOptionToken
+            .checkLyraPositionsSettled(_spreadPositionId);
 
         spreadOptionToken.settlePosition(_spreadPositionId);
 
@@ -651,7 +593,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         // @dev totalLPSettlementAmount - collateral returned
         // @dev traderSettlementAmount usually when loss there is a profit
         if (totalLPLossToBeRecovered > 0) {
-            console.log("totalLPLossToBeRecovered");
             // need to recover from user profits if any
             // if no user profits recover from maxLossPosted
             // @example collateral loss is $500 tradersettlement is $200
@@ -682,11 +623,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
                 _routeMaxLossCollateralToLP(position.maxLossPosted);
             }
         } else {
-            console.log("here totalLPLossToBeRecovered");
-            console.log(position.maxLossPosted);
-            console.log("possibly means maxLossPosted to position didn't include the adjustment");
-            uint bal = quoteAsset.balanceOf(address(spreadMaxLossCollateral));
-            console.log(bal);
             // @dev return max loss posted
             spreadMaxLossCollateral.sendQuoteToTrader(trader, position.maxLossPosted);
 
@@ -694,6 +630,11 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
             _routeFundsToTrader(trader, traderSettlementAmount);
             _routeCollateralToLP(totalLPSettlementAmount);
         }
+    }
+
+    function getOptionStatus(uint _spreadPositionId) public view returns (PositionState state) {
+        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
+        return position.state;
     }
 
     /// @dev calculates profit made by a long call
@@ -802,9 +743,9 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    function _routeExtraBackToUser(uint _maxCost, uint _actualCost) internal {
-        if (!quoteAsset.transfer(msg.sender, _maxCost - _actualCost)) {
-            revert TransferFundsToTraderFailed(msg.sender, _maxCost - _actualCost);
+    function _routeExtraBackToUser(uint __maxCost, uint _actualCost) internal {
+        if (!quoteAsset.transfer(msg.sender, __maxCost - _actualCost)) {
+            revert TransferFundsToTraderFailed(msg.sender, __maxCost - _actualCost);
         }
     }
 
@@ -851,148 +792,97 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     /************************************************
      *  VALIDATE SPREAD TRADE
      ***********************************************/
-    /// @dev calculate max loss
-    /// @dev sums call side and put currently
-    function validMaxLossPosted(
+    /**
+     * @notice Sums up max loss for each side of spread
+     * @dev This validation is run after validSpread checks
+     * @param _market market
+     * @param _sellResults results from buys
+     * @param _buyResults results from buys
+     */
+    function validMaxLossAndExpiries(
         bytes32 _market,
         TradeResult[] memory _sellResults,
         TradeResult[] memory _buyResults
-    ) public view returns (uint maxLoss, uint maxShortExpiry) {
-        (
-            uint longCallAvg,
-            uint longPutAvg,
-            uint longCallExpiry,
-            uint longPutExpiry
-        ) = _longPriceAvg(_market, _buyResults);
+    ) internal view returns (uint maxLoss, uint expiry) {
+        TradeResult memory result;
+        int maxLossCall;
+        int maxLossPut;
+        uint shortExpiry;
+        uint longExpiry;
 
-        (
-            uint shortCallAvg,
-            uint shortPutAvg,
-            uint totalShortCallSize,
-            uint totalShortPutSize,
-            uint shortCallExpiry,
-            uint shortPutExpiry
-        ) = _shortPriceAvg(_market, _sellResults);
+        ILyraBase _lyraBase = lyraBase(_market);
 
-        if (longCallExpiry > 0 && longCallExpiry < shortCallExpiry) {
-            revert InvalidLongCallExpiry(longCallExpiry, shortCallExpiry);
+        if (_sellResults.length == 0) {
+            return (0, 0);
         }
 
-        if (longPutExpiry > 0 && longPutExpiry < shortPutExpiry) {
-            revert InvalidLongPutExpiry(longPutExpiry, shortPutExpiry);
-        }
-
-        /// @dev find average max loss on each side * multiply amount of short collateral
-        /// probably absolute value needed not int
-        int maxLossCallSide = (SafeCast.toInt256(longCallAvg) - SafeCast.toInt256(shortCallAvg))
-            .multiplyDecimal(SafeCast.toInt256(totalShortCallSize));
-
-        int maxLossPutSide = (SafeCast.toInt256(longPutAvg) - SafeCast.toInt256(shortPutAvg))
-            .multiplyDecimal(SafeCast.toInt256(totalShortPutSize));
-
-        int sumOfLosses = maxLossCallSide + maxLossPutSide;
-
-        if (shortCallExpiry < shortPutExpiry) {
-            maxShortExpiry = shortPutExpiry;
-        } else {
-            maxShortExpiry = shortCallExpiry;
-        }
-
-        if (sumOfLosses < 0) {
-            return (uint(-sumOfLosses), maxShortExpiry);
-        } else {
-            return (uint(sumOfLosses), maxShortExpiry);
-        }
-    }
-
-    function _longPriceAvg(
-        bytes32 _market,
-        TradeResult[] memory _buyResults
-    )
-        internal
-        view
-        returns (uint longCallAvg, uint longPutAvg, uint longCallExpiry, uint longPutExpiry)
-    {
-        address _optionMarket = lyraBase(_market).getOptionMarket();
-        OptionMarket optionMarket = OptionMarket(_optionMarket);
-
-        TradeResult memory trade;
-
-        uint totalLongCallSize;
-        uint totalLongPutSize;
-        // long expiry needs to be further out than short
-        for (uint i = 0; i < _buyResults.length; i++) {
-            trade = _buyResults[i];
-            (uint strikePrice, uint expiry) = optionMarket.getStrikeAndExpiry(trade.strikeId);
-            if (OptionType(trade.optionType) == OptionType.LONG_CALL) {
-                longCallAvg = longCallAvg + strikePrice.multiplyDecimal(trade.amount);
-                totalLongCallSize = totalLongCallSize + trade.amount;
-                // get earliest expiry
-                longCallExpiry = longCallExpiry > expiry ? expiry : longCallExpiry;
-            } else if (OptionType(trade.optionType) == OptionType.LONG_PUT) {
-                longPutAvg = longPutAvg + strikePrice.multiplyDecimal(trade.amount);
-                totalLongPutSize = totalLongPutSize + trade.amount;
-                // get earliest expiry
-                longPutExpiry = longPutExpiry > expiry ? expiry : longPutExpiry;
-            }
-        }
-
-        /// @dev find average long call strike
-        if (totalLongCallSize > 0) {
-            longCallAvg = longCallAvg.divideDecimal(totalLongCallSize);
-        }
-
-        // /// @dev find average long put strike
-        if (totalLongPutSize > 0) {
-            longPutAvg = longPutAvg.divideDecimal(totalLongPutSize);
-        }
-    }
-
-    function _shortPriceAvg(
-        bytes32 _market,
-        TradeResult[] memory _sellResults
-    )
-        internal
-        view
-        returns (
-            uint shortCallAvg,
-            uint shortPutAvg,
-            uint totalShortCallSize,
-            uint totalShortPutSize,
-            uint shortCallExpiry,
-            uint shortPutExpiry
-        )
-    {
-        address _optionMarket = lyraBase(_market).getOptionMarket();
-        OptionMarket optionMarket = OptionMarket(_optionMarket);
-
-        TradeResult memory trade;
+        uint shortCallCount;
+        uint shortPutCount;
 
         for (uint i = 0; i < _sellResults.length; i++) {
-            trade = _sellResults[i];
-            (uint strikePrice, uint expiry) = optionMarket.getStrikeAndExpiry(trade.strikeId);
-            if (OptionType(trade.optionType) == OptionType.SHORT_CALL_QUOTE) {
-                shortCallAvg = shortCallAvg + strikePrice.multiplyDecimal(trade.amount);
-                totalShortCallSize = totalShortCallSize + trade.amount;
-                // get latest expiry
-                shortCallExpiry = shortCallExpiry > expiry ? shortCallExpiry : expiry;
-            } else if (OptionType(trade.optionType) == OptionType.SHORT_PUT_QUOTE) {
-                shortPutAvg = shortPutAvg + strikePrice.multiplyDecimal(trade.amount);
-                totalShortPutSize = totalShortPutSize + trade.amount;
-                // get latest expiry
-                shortPutExpiry = shortPutExpiry > expiry ? shortPutExpiry : expiry;
+            result = _sellResults[i];
+
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
+
+            int strikePriceTotal = SafeCast.toInt256(strike.strikePrice.multiplyDecimal(result.amount));
+
+            if (_isCall(result.optionType)) {
+                maxLossCall = maxLossCall - strikePriceTotal;
+                shortCallCount += result.amount; // add amount
+            } else {
+                maxLossPut = maxLossPut - strikePriceTotal;
+                shortPutCount += result.amount;
             }
+
+            shortExpiry = shortExpiry > strike.expiry ? shortExpiry : strike.expiry;
         }
 
-        /// @dev find average short call strike
-        if (totalShortCallSize > 0) {
-            shortCallAvg = shortCallAvg.divideDecimal(totalShortCallSize);
+        uint longCallCount;
+        uint longPutCount;
+
+        for (uint i = 0; i < _buyResults.length; i++) {
+            result = _buyResults[i];
+
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
+
+            uint strikePrice = strike.strikePrice;
+            int strikePriceTotal = SafeCast.toInt256(strike.strikePrice.multiplyDecimal(result.amount));
+
+            if (_isCall(result.optionType)) {
+                longCallCount += result.amount;
+                if (longCallCount <= shortCallCount) {
+                    maxLossCall = maxLossCall + strikePriceTotal;
+                    shortCallCount -= longCallCount;
+                } else {
+                    maxLossCall =
+                        maxLossCall +
+                        SafeCast.toInt256(strikePrice.multiplyDecimal(longCallCount - shortCallCount));
+                }
+            } else {
+                longPutCount += result.amount;
+                if (longPutCount < shortPutCount) {
+                    maxLossPut = maxLossPut + strikePriceTotal;
+                    shortPutCount -= longPutCount;
+                } else {
+                    maxLossPut =
+                        maxLossPut +
+                        SafeCast.toInt256(strikePrice.multiplyDecimal(longPutCount - shortPutCount));
+                }
+            }
+
+            longExpiry = longExpiry > strike.expiry ? longExpiry : strike.expiry;
         }
 
-        // /// @dev find average short put strike
-        if (totalShortPutSize > 0) {
-            shortPutAvg = shortPutAvg.divideDecimal(totalShortPutSize);
+        if (longExpiry > 0 && longExpiry < shortExpiry) {
+            revert InvalidLongExpiry(longExpiry, shortExpiry);
         }
+
+        if (maxLossCall < 0) {
+            maxLossCall = 0;
+        }
+
+        expiry = shortExpiry;
+        maxLoss = _abs(maxLossCall) > _abs(maxLossPut) ? _abs(maxLossCall) : _abs(maxLossPut);
     }
 
     /**
@@ -1001,9 +891,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @return isValid is a valid spread
      * @return totalSells total trades
      */
-    function validSpread(
-        TradeInputParameters[] memory _trades
-    ) internal pure returns (bool isValid, uint totalSells) {
+    function validSpread(TradeInputParameters[] memory _trades) public pure returns (bool isValid, uint totalSells) {
         uint tradesLen = _trades.length;
         TradeInputParameters memory trade;
 
@@ -1040,10 +928,12 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         return (true, sells);
     }
 
-    function validSingleMarket(
-        bytes32 _market,
-        TradeInputParameters[] memory _trades
-    ) internal pure returns (bool) {
+    /**
+     * @notice spreads are single market
+     * @param _market eth btc ...
+     * @param _trades trades
+     */
+    function validSingleMarket(bytes32 _market, TradeInputParameters[] memory _trades) internal pure returns (bool) {
         uint tradesLen = _trades.length;
         TradeInputParameters memory trade;
 
@@ -1055,6 +945,73 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
 
         return true;
+    }
+
+    /**
+     * @notice validate increase is valid
+     * @dev Used to support ranged markets
+     * @dev must have a lyra position id
+     * @dev last example would pass validIncrease check but wouldn't pass validSpread (even if it might be valid)
+     * @dev must also have position ids set
+     * @param _trades trades
+     */
+    function validIncrease(TradeInputParameters[] memory _trades) internal pure returns (bool) {
+        for (uint i = 0; i < _trades.length; i++) {
+            TradeInputParameters memory trade = _trades[i];
+            if (trade.positionId == 0) {
+                // should have lyra position id
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @notice Equal amount required when partial close
+     */
+    function validPartialClose(TradeInputParameters[] memory _params) internal pure returns (bool) {
+        TradeInputParameters memory param;
+        uint equalCloseAmount;
+
+        for (uint i = 0; i < _params.length; i++) {
+            param = _params[i];
+            if (equalCloseAmount == 0) {
+                equalCloseAmount = param.amount;
+                continue;
+            }
+
+            if (equalCloseAmount != param.amount) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /************************************************
+     *  lyra quoter
+     ***********************************************/
+
+    /**
+     * @notice gets quote for trade
+     */
+    function getQuote(
+        bytes32 _market,
+        uint strikeId,
+        uint optionType,
+        uint amount,
+        uint tradeDirection,
+        bool isForceClose
+    ) public view returns (uint totalPremium, uint totalFees) {
+        (totalPremium, totalFees) = lyraBase(_market).getQuote(
+            strikeId,
+            1,
+            optionType,
+            amount,
+            tradeDirection, // 0 open 1 close 2 liquidate
+            isForceClose
+        );
     }
 
     /************************************************
@@ -1111,6 +1068,10 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
                     strike.strikePrice,
                     strike.expiry
                 );
+                // @dev currently used for testing ranged markets
+                // @dev 200usd is the minimum set collateral allowed by lyra
+                setCollateralTo = setCollateralTo < 200e18 ? 200e18 : setCollateralTo;
+                collateralToAdd = collateralToAdd < 200e18 ? 200e18 : collateralToAdd;
                 trade.setCollateralTo = setCollateralTo;
                 totalCollateralToAdd = totalCollateralToAdd + collateralToAdd;
                 totalSetCollateralTo = totalSetCollateralTo + setCollateralTo;
@@ -1127,11 +1088,17 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     }
 
     function _isLong(uint _optionType) internal pure returns (bool isLong) {
-        if (
-            OptionType(_optionType) == OptionType.LONG_CALL ||
-            OptionType(_optionType) == OptionType.LONG_PUT
-        ) {
+        if (OptionType(_optionType) == OptionType.LONG_CALL || OptionType(_optionType) == OptionType.LONG_PUT) {
             isLong = true;
+        }
+    }
+
+    function _isCall(uint _optionType) public view returns (bool isCall) {
+        console.log("_optionType");
+        console.log(_optionType);
+        if (OptionType(_optionType) == OptionType.LONG_CALL || OptionType(_optionType) == OptionType.SHORT_CALL_QUOTE) {
+            console.log("is call");
+            isCall = true;
         }
     }
 
@@ -1181,10 +1148,12 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     /************************************************
      *  ERRORS
      ***********************************************/
+    error InvalidLongExpiry(uint longCallExpiry, uint shortCallExpiry);
 
     error InvalidLongCallExpiry(uint longCallExpiry, uint shortCallExpiry);
 
     error InvalidLongPutExpiry(uint longPutExpiry, uint shortPutExpiry);
+
     /// @notice cannot execute invalid order
     /// @param _trades trades attempted
     error NotValidSpread(TradeInputParameters[] _trades);
@@ -1235,4 +1204,10 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     /// @notice max loss collateral transfer failed during trade
     /// @param thrower address of owner
     error MaxLossCollateralTransferFailed(address thrower);
+
+    error NotValidIncrease(TradeInputParameters[] _trades);
+
+    error ClosingMoreThanInPosition();
+    error NotValidPartialClose(TradeInputParameters[] _params);
+    error NotAbleToPartialClose();
 }
