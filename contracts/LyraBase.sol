@@ -201,13 +201,21 @@ contract LyraBase {
     // get all board related info (non GWAV)
     function getBoard(uint boardId) internal view returns (Board memory) {
         OptionMarket.OptionBoard memory board = optionMarket.getOptionBoard(boardId);
-        return
-            Board({
-                id: board.id,
-                expiry: board.expiry,
-                boardIv: board.iv,
-                strikeIds: board.strikeIds
-            });
+        return Board({id: board.id, expiry: board.expiry, boardIv: board.iv, strikeIds: board.strikeIds});
+    }
+
+    function getStrike(uint strikeId) public view returns (Strike memory strike) {
+        (OptionMarket.Strike memory _strike, OptionMarket.OptionBoard memory board) = optionMarket.getStrikeAndBoard(
+            strikeId
+        );
+
+        strike = Strike({
+            id: _strike.id,
+            expiry: board.expiry,
+            strikePrice: _strike.strikePrice,
+            skew: _strike.skew,
+            boardIv: board.iv
+        });
     }
 
     // get all strike related info (non GWAV)
@@ -215,10 +223,9 @@ contract LyraBase {
         allStrikes = new Strike[](strikeIds.length);
 
         for (uint i = 0; i < strikeIds.length; i++) {
-            (
-                OptionMarket.Strike memory strike,
-                OptionMarket.OptionBoard memory board
-            ) = optionMarket.getStrikeAndBoard(strikeIds[i]);
+            (OptionMarket.Strike memory strike, OptionMarket.OptionBoard memory board) = optionMarket.getStrikeAndBoard(
+                strikeIds[i]
+            );
 
             allStrikes[i] = Strike({
                 id: strike.id,
@@ -237,10 +244,9 @@ contract LyraBase {
         vols = new uint[](strikeIds.length);
 
         for (uint i = 0; i < strikeIds.length; i++) {
-            (
-                OptionMarket.Strike memory strike,
-                OptionMarket.OptionBoard memory board
-            ) = optionMarket.getStrikeAndBoard(strikeIds[i]);
+            (OptionMarket.Strike memory strike, OptionMarket.OptionBoard memory board) = optionMarket.getStrikeAndBoard(
+                strikeIds[i]
+            );
 
             vols[i] = board.iv.multiplyDecimal(strike.skew);
         }
@@ -304,9 +310,7 @@ contract LyraBase {
     // get spot price of sAsset and exchange fee percentages
     function getExchangeParams() public view returns (ExchangeRateParams memory) {
         // update this to only return what is used (spot price)
-        SynthetixAdapter.ExchangeParams memory params = exchangeAdapter.getExchangeParams(
-            address(optionMarket)
-        );
+        SynthetixAdapter.ExchangeParams memory params = exchangeAdapter.getExchangeParams(address(optionMarket));
         return
             ExchangeRateParams({
                 spotPrice: params.spotPrice,
@@ -355,9 +359,7 @@ contract LyraBase {
     }
 
     function getMinCollateralForPosition(uint positionId) public view returns (uint) {
-        OptionToken.PositionWithOwner memory position = optionToken.getPositionWithOwner(
-            positionId
-        );
+        OptionToken.PositionWithOwner memory position = optionToken.getPositionWithOwner(positionId);
         if (_isLong(OptionType(uint(position.optionType)))) return 0;
 
         uint strikePrice;
@@ -374,11 +376,7 @@ contract LyraBase {
             );
     }
 
-    function getMinCollateralForStrike(
-        OptionType optionType,
-        uint strikeId,
-        uint amount
-    ) internal view returns (uint) {
+    function getMinCollateralForStrike(OptionType optionType, uint strikeId, uint amount) internal view returns (uint) {
         if (_isLong(optionType)) return 0;
 
         uint strikePrice;
@@ -399,11 +397,10 @@ contract LyraBase {
     // Misc //
     //////////
 
-    function _getBsInput(
-        uint strikeId
-    ) internal view returns (BlackScholes.BlackScholesInputs memory bsInput) {
-        (OptionMarket.Strike memory strike, OptionMarket.OptionBoard memory board) = optionMarket
-            .getStrikeAndBoard(strikeId);
+    function _getBsInput(uint strikeId) internal view returns (BlackScholes.BlackScholesInputs memory bsInput) {
+        (OptionMarket.Strike memory strike, OptionMarket.OptionBoard memory board) = optionMarket.getStrikeAndBoard(
+            strikeId
+        );
         bsInput = BlackScholes.BlackScholesInputs({
             timeToExpirySec: board.expiry - block.timestamp,
             volatilityDecimal: board.iv.multiplyDecimal(strike.skew),
@@ -423,10 +420,7 @@ contract LyraBase {
 
     function volGWAV(uint strikeId, uint secondsAgo) public view returns (uint) {
         OptionMarket.Strike memory strike = optionMarket.getStrike(strikeId);
-        return
-            gwavOracle.ivGWAV(strike.boardId, secondsAgo).multiplyDecimal(
-                gwavOracle.skewGWAV(strikeId, secondsAgo)
-            );
+        return gwavOracle.ivGWAV(strike.boardId, secondsAgo).multiplyDecimal(gwavOracle.skewGWAV(strikeId, secondsAgo));
     }
 
     /**
@@ -435,9 +429,7 @@ contract LyraBase {
     function _isOutsideDeltaCutoff(uint strikeId) public view returns (bool) {
         MarketParams memory marketParams = getMarketParams();
         int callDelta = getDeltas(_toDynamic(strikeId))[0];
-        return
-            callDelta > (int(DecimalMath.UNIT) - marketParams.deltaCutOff) ||
-            callDelta < marketParams.deltaCutOff;
+        return callDelta > (int(DecimalMath.UNIT) - marketParams.deltaCutOff) || callDelta < marketParams.deltaCutOff;
     }
 
     /*****************************************************
@@ -468,10 +460,45 @@ contract LyraBase {
     }
 
     /**
-     * @dev get required collatreal for short with collateral percent
+     * @dev get required collateral for close
+     */
+    function getRequiredCollateralClose(
+        uint _closeSize,
+        uint _optionType,
+        uint _positionId,
+        uint _strikePrice,
+        uint _strikeExpiry,
+        uint _collatBuffer
+    ) public view returns (uint collateralRemoved, uint setCollateralTo) {
+        uint existingAmount;
+        uint existingCollateral;
+
+        if (_positionId > 0) {
+            OptionPosition memory position = getPositions(_toDynamic(_positionId))[0];
+            existingCollateral = position.collateral;
+            existingAmount = position.amount;
+        }
+
+        // remove all collateral
+        if (_closeSize == existingAmount) {
+            return (0, 0);
+        }
+
+        setCollateralTo = _getBufferCollateralMax(
+            _strikePrice,
+            _strikeExpiry,
+            existingAmount - _closeSize, // existingAmount - _size
+            _optionType,
+            _collatBuffer
+        );
+
+        collateralRemoved = existingCollateral - setCollateralTo;
+    }
+
+    /**
+     * @dev get required collateral for short with collateral percent
      *
      */
-
     function getRequiredCollateral(
         uint _size,
         uint _optionType,
@@ -491,26 +518,18 @@ contract LyraBase {
             existingAmount = position.amount;
         }
 
-        uint minBufferCollateral = _getBufferCollateral(
+        uint minCollatWithBuffer = _getBufferCollateralMin(
             _strikePrice,
             _strikeExpiry,
-            existingAmount + _size,
+            existingAmount + _size, // existingAmount - _size
             _optionType,
             _collatBuffer
         );
 
-        uint targetCollat = _getTargetCollateral(
-            existingCollateral,
-            _strikePrice,
-            _size,
-            _optionType,
-            _collatPercent // partial collateral: 0.9 -> 90% * fullCollat
-        );
+        uint targetCollat = _getTargetCollateral(existingCollateral, _strikePrice, _size, _optionType, _collatPercent);
 
-        // if excess collateral, keep in position to encourage more option selling
-        setCollateralTo = _max(_max(minBufferCollateral, targetCollat), existingCollateral);
+        setCollateralTo = _max(minCollatWithBuffer, targetCollat);
 
-        // existingCollateral is never > setCollateralTo
         collateralToAdd = setCollateralTo - existingCollateral;
     }
 
@@ -526,10 +545,19 @@ contract LyraBase {
             _getFullCollateral(_strikePrice, _size, _optionType).multiplyDecimal(_collatPercent);
     }
 
+    function _getTargetCollateralClose(
+        uint _strikePrice,
+        uint _size,
+        uint _optionType,
+        uint _collatPercent
+    ) internal pure returns (uint targetCollat) {
+        targetCollat = _getFullCollateral(_strikePrice, _size, _optionType).multiplyDecimal(_collatPercent);
+    }
+
     /**
      * @dev get amount of collateral needed for shorting {amount} of strike, according to the strategy
      */
-    function _getBufferCollateral(
+    function _getBufferCollateralMax(
         uint _strikePrice,
         uint _expiry,
         uint _amount,
@@ -539,13 +567,30 @@ contract LyraBase {
         ExchangeRateParams memory exchangeParams = getExchangeParams();
 
         uint _spotPrice = exchangeParams.spotPrice;
-        uint minCollat = getMinCollateral(
-            OptionType(_optionType),
-            _strikePrice,
-            _expiry,
-            _spotPrice,
-            _amount
-        );
+        uint minCollat = getMinCollateral(OptionType(_optionType), _strikePrice, _expiry, _spotPrice, _amount);
+
+        require(minCollat > 0, "min collat must be more");
+
+        uint minCollatWithBuffer = minCollat.multiplyDecimal(_collatBuffer);
+
+        uint fullCollat = _getFullCollateral(_strikePrice, _amount, _optionType);
+        require(fullCollat > 0, "fullCollat collat must be more");
+
+        return _max(minCollatWithBuffer, fullCollat);
+    }
+
+    function _getBufferCollateralMin(
+        uint _strikePrice,
+        uint _expiry,
+        uint _amount,
+        uint _optionType,
+        uint _collatBuffer
+    ) internal view returns (uint) {
+        ExchangeRateParams memory exchangeParams = getExchangeParams();
+
+        uint _spotPrice = exchangeParams.spotPrice;
+        uint minCollat = getMinCollateral(OptionType(_optionType), _strikePrice, _expiry, _spotPrice, _amount);
+
         require(minCollat > 0, "min collat must be more");
 
         uint minCollatWithBuffer = minCollat.multiplyDecimal(_collatBuffer);

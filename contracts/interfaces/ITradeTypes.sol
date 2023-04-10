@@ -2,6 +2,14 @@
 pragma solidity ^0.8.9;
 
 interface ITradeTypes {
+    enum PositionState {
+        EMPTY,
+        ACTIVE,
+        CLOSED,
+        LIQUIDATED,
+        SETTLED
+    }
+
     enum OptionType {
         LONG_CALL,
         LONG_PUT,
@@ -16,6 +24,11 @@ interface ITradeTypes {
         LIMIT_VOL,
         TAKE_PROFIT,
         STOP_LOSS
+    }
+
+    enum RangedPosition {
+        IN,
+        OUT
     }
 
     struct StrikeTradeOrder {
@@ -66,5 +79,12 @@ interface ITradeTypes {
         uint amount;
         uint setCollateralTo;
         uint strikeId;
+    }
+
+    struct Pricing {
+        uint amount;
+        uint slippage;
+        uint tradeDirection;
+        bool forceClose;
     }
 }

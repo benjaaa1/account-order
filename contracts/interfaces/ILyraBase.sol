@@ -115,6 +115,8 @@ interface ILyraBase {
 
     function getBoard(uint boardId) external view returns (Board memory);
 
+    function getStrike(uint strikeId) external view returns (Strike memory strike);
+
     function getStrikes(uint[] memory strikeIds) external view returns (Strike[] memory allStrikes);
 
     function getVols(uint[] memory strikeIds) external view returns (uint[] memory vols);
@@ -142,9 +144,7 @@ interface ILyraBase {
     // Option Position Getters //
     /////////////////////////////
 
-    function getPositions(
-        uint[] memory positionIds
-    ) external view returns (OptionPosition[] memory);
+    function getPositions(uint[] memory positionIds) external view returns (OptionPosition[] memory);
 
     function getMinCollateral(
         OptionType optionType,
@@ -156,23 +156,26 @@ interface ILyraBase {
 
     function getMinCollateralForPosition(uint positionId) external view returns (uint);
 
-    function getMinCollateralForStrike(
-        OptionType optionType,
-        uint strikeId,
-        uint amount
-    ) external view returns (uint);
+    function getMinCollateralForStrike(OptionType optionType, uint strikeId, uint amount) external view returns (uint);
 
     //////////
     // Misc //
     //////////
 
-    function _getBsInput(
-        uint strikeId
-    ) external view returns (BlackScholes.BlackScholesInputs memory bsInput);
+    function _getBsInput(uint strikeId) external view returns (BlackScholes.BlackScholesInputs memory bsInput);
 
     function _isLong(OptionType optionType) external pure returns (bool);
 
     function _isOutsideDeltaCutoff(uint strikeId) external view returns (bool);
+
+    function getRequiredCollateralClose(
+        uint _closeSize,
+        uint _optionType,
+        uint _positionId,
+        uint _strikePrice,
+        uint _strikeExpiry,
+        uint _collatBuffer
+    ) external view returns (uint collateralRemoved, uint setCollateralTo);
 
     function getRequiredCollateral(
         uint _size,

@@ -1,10 +1,30 @@
-import { getGlobalDeploys, getMarketDeploys } from '@lyrafinance/protocol';
+import { getGlobalDeploys, getMarketDeploys, lyraConstants } from '@lyrafinance/protocol';
 import { toBN } from '@lyrafinance/protocol/dist/scripts/util/web3utils';
-import { deployTestSystem } from '@lyrafinance/protocol/dist/test/utils/deployTestSystem';
+import { addNewMarketSystem, deployGlobalTestContracts, deployMarketTestContracts, deployTestSystem } from '@lyrafinance/protocol/dist/test/utils/deployTestSystem';
 import { ethers } from 'hardhat';
 
 import { DEFAULT_OPTION_MARKET_PARAMS } from '@lyrafinance/protocol/dist/test/utils/defaultParams';
-import { seedTestSystem } from '@lyrafinance/protocol/dist/test/utils/seedTestSystem';
+import { seedNewMarketSystem, seedTestSystem } from '@lyrafinance/protocol/dist/test/utils/seedTestSystem';
+
+const boardParameterETH = {
+  expiresIn: lyraConstants.DAY_SEC * 7,
+  baseIV: "0.7",
+  strikePrices: ["2500", "2600", "2700", "2800", "2900", "3000", "3100"],
+  skews: [".9", "1", "1", "1", "1", "1", "1.1"],
+};
+
+const boardParameterBTC = {
+  expiresIn: lyraConstants.DAY_SEC * 7,
+  baseIV: "0.7",
+  strikePrices: ["25000", "26000", "27000", "28000", "29000", "30000", "31000"],
+  skews: [".9", "1", "1", "1", "1", "1", "1.1"],
+};
+
+const spotPriceETH = toBN("2800");
+const spotPriceBTC = toBN("28000");
+
+const initialPoolDepositETH = toBN("15000000");
+const initialPoolDepositBTC = toBN("15000000");
 
 // run this script using `yarn hardhat run --network local` if running directly from repo (not @lyrafinance/protocol)
 // otherwise OZ will think it's deploying to hardhat network and not local
@@ -30,11 +50,11 @@ async function main() {
     optionMarketParams: { ...DEFAULT_OPTION_MARKET_PARAMS, feePortionReserved: toBN('0.05') },
   });
 
-  await seedTestSystem(lyra, localTestSystem);
-
-  // // 3. add new BTC market
-  // let newMarketSystem = await addNewMarketSystem(deployer, localTestSystem, 'sBTC', exportAddresses)
-  // await seedNewMarketSystem(deployer, localTestSystem, newMarketSystem)
+  await seedTestSystem(lyra, localTestSystem, {
+    initialBoard: boardParameterETH,
+    initialBasePrice: spotPriceETH,
+    initialPoolDeposit: initialPoolDepositETH,
+  });
 
   // 4. get global contracts
   let lyraGlobal: any = getGlobalDeploys('local');

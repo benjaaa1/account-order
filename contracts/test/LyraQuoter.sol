@@ -65,9 +65,7 @@ contract LyraQuoter {
         timeToExpiryAnnualized = timeToExpiry / (60 * 60 * 24 * 365);
     }
 
-    function _isLong(
-        IOptionMarket.OptionType optionType
-    ) internal pure returns (bool) {
+    function _isLong(IOptionMarket.OptionType optionType) internal pure returns (bool) {
         return (optionType == IOptionMarket.OptionType.LONG_CALL ||
             optionType == IOptionMarket.OptionType.LONG_PUT);
     }
@@ -94,21 +92,18 @@ contract LyraQuoter {
             );
         }
 
-        ILyraRegister.OptionMarketAddresses memory marketAddresses = register
-            .getMarketAddresses(optionMarket);
+        ILyraRegister.OptionMarketAddresses memory marketAddresses = register.getMarketAddresses(
+            optionMarket
+        );
 
         IOptionMarket.Strike memory strike = optionMarket.getStrike(strikeId);
         if (strike.id != strikeId) {
             revert IOptionMarket.InvalidStrikeId(address(this), strikeId);
         }
 
-        IOptionMarket.OptionBoard memory board = optionMarket.getOptionBoard(
-            strike.boardId
-        );
+        IOptionMarket.OptionBoard memory board = optionMarket.getOptionBoard(strike.boardId);
 
-        uint256 boardToPriceAtExpiry = optionMarket.boardToPriceAtExpiry(
-            board.id
-        );
+        uint256 boardToPriceAtExpiry = optionMarket.boardToPriceAtExpiry(board.id);
 
         if (boardToPriceAtExpiry != 0) {
             revert IOptionMarket.BoardAlreadySettled(address(this), board.id);
@@ -126,27 +121,23 @@ contract LyraQuoter {
             );
         }
 
-        ISynthetixAdapter.ExchangeParams
-            memory exchangeParams = synthetixAdapter.getExchangeParams(
-                address(optionMarket)
-            );
+        ISynthetixAdapter.ExchangeParams memory exchangeParams = synthetixAdapter.getExchangeParams(
+            address(optionMarket)
+        );
 
-        IOptionMarket.TradeParameters memory trade = IOptionMarket
-            .TradeParameters({
-                isBuy: (tradeDirection == IOptionMarket.TradeDirection.OPEN)
-                    ? _isLong(optionType)
-                    : !_isLong(optionType),
-                isForceClose: isForceClose,
-                tradeDirection: tradeDirection,
-                optionType: optionType,
-                amount: amount / iterations,
-                expiry: board.expiry,
-                strikePrice: strike.strikePrice,
-                exchangeParams: exchangeParams,
-                liquidity: marketAddresses.liquidityPool.getLiquidity(
-                    exchangeParams.spotPrice
-                )
-            });
+        IOptionMarket.TradeParameters memory trade = IOptionMarket.TradeParameters({
+            isBuy: (tradeDirection == IOptionMarket.TradeDirection.OPEN)
+                ? _isLong(optionType)
+                : !_isLong(optionType),
+            isForceClose: isForceClose,
+            tradeDirection: tradeDirection,
+            optionType: optionType,
+            amount: amount / iterations,
+            expiry: board.expiry,
+            strikePrice: strike.strikePrice,
+            exchangeParams: exchangeParams,
+            liquidity: marketAddresses.liquidityPool.getLiquidity(exchangeParams.spotPrice)
+        });
 
         quoteParameters = QuoteParameters({
             optionMarket: optionMarket,
@@ -158,14 +149,10 @@ contract LyraQuoter {
             timeToExpiry: max(0, board.expiry - block.timestamp),
             iterations: iterations,
             globalCache: marketAddresses.greekCache.getGlobalCache(),
-            greekCacheParameters: marketAddresses
-                .greekCache
-                .getGreekCacheParams(),
+            greekCacheParameters: marketAddresses.greekCache.getGreekCacheParams(),
             trade: trade,
             boardGreek: marketAddresses.greekCache.getBoardGreeksView(board.id),
-            tradeLimitParams: marketAddresses
-                .optionMarketPricer
-                .tradeLimitParams()
+            tradeLimitParams: marketAddresses.optionMarketPricer.tradeLimitParams()
         });
     }
 
@@ -185,8 +172,7 @@ contract LyraQuoter {
 
         return
             (params.trade.optionType == IOptionMarket.OptionType.LONG_PUT ||
-                params.trade.optionType ==
-                IOptionMarket.OptionType.SHORT_PUT_QUOTE)
+                params.trade.optionType == IOptionMarket.OptionType.SHORT_PUT_QUOTE)
                 ? put
                 : call;
     }
@@ -197,8 +183,7 @@ contract LyraQuoter {
         uint256 pricePerOption,
         uint256 size
     ) internal view returns (uint256) {
-        IOptionMarketPricer.PricingParameters memory pricingParams = pricer
-            .getPricingParams();
+        IOptionMarketPricer.PricingParameters memory pricingParams = pricer.getPricingParams();
 
         uint256 timeWeightedOptionPriceFee = pricer.getTimeWeightedFee(
             board.expiry,
@@ -207,10 +192,7 @@ contract LyraQuoter {
             pricingParams.optionPriceFeeCoefficient
         );
 
-        return
-            timeWeightedOptionPriceFee.multiplyDecimal(size).multiplyDecimal(
-                pricePerOption
-            );
+        return timeWeightedOptionPriceFee.multiplyDecimal(size).multiplyDecimal(pricePerOption);
     }
 
     function _getSpotPriceFee(
@@ -219,8 +201,7 @@ contract LyraQuoter {
         uint256 size,
         uint256 spotPrice
     ) internal view returns (uint256) {
-        IOptionMarketPricer.PricingParameters memory pricingParams = pricer
-            .getPricingParams();
+        IOptionMarketPricer.PricingParameters memory pricingParams = pricer.getPricingParams();
 
         uint256 timeWeightedSpotPriceFee = pricer.getTimeWeightedFee(
             board.expiry,
@@ -229,10 +210,7 @@ contract LyraQuoter {
             pricingParams.spotPriceFeeCoefficient
         );
 
-        return
-            timeWeightedSpotPriceFee.multiplyDecimal(size).multiplyDecimal(
-                spotPrice
-            );
+        return timeWeightedSpotPriceFee.multiplyDecimal(size).multiplyDecimal(spotPrice);
     }
 
     function _getOtherFees(
@@ -249,27 +227,21 @@ contract LyraQuoter {
             })
         );
 
-        IOptionGreekCache.TradePricing memory pricing = IOptionGreekCache
-            .TradePricing({
-                optionPrice: params.optionPrice,
-                preTradeAmmNetStdVega: params.preTradeAmmNetStdVega,
-                postTradeAmmNetStdVega: params.postTradeAmmNetStdVega,
-                callDelta: 0, //Not used on below functions
-                volTraded: params.volTraded,
-                ivVariance: params.ivVariance,
-                vega: vegaDecimal
-            });
-        IOptionMarketPricer.VegaUtilFeeComponents
-            memory vegaUtilFeeComps = quoterParams.optionPricer.getVegaUtilFee(
-                quoterParams.trade,
-                pricing
-            );
-        IOptionMarketPricer.VarianceFeeComponents
-            memory varianceFeeComps = quoterParams.optionPricer.getVarianceFee(
-                quoterParams.trade,
-                pricing,
-                params.newSkew
-            );
+        IOptionGreekCache.TradePricing memory pricing = IOptionGreekCache.TradePricing({
+            optionPrice: params.optionPrice,
+            preTradeAmmNetStdVega: params.preTradeAmmNetStdVega,
+            postTradeAmmNetStdVega: params.postTradeAmmNetStdVega,
+            callDelta: 0, //Not used on below functions
+            volTraded: params.volTraded,
+            ivVariance: params.ivVariance,
+            vega: vegaDecimal
+        });
+        IOptionMarketPricer.VegaUtilFeeComponents memory vegaUtilFeeComps = quoterParams
+            .optionPricer
+            .getVegaUtilFee(quoterParams.trade, pricing);
+        IOptionMarketPricer.VarianceFeeComponents memory varianceFeeComps = quoterParams
+            .optionPricer
+            .getVarianceFee(quoterParams.trade, pricing, params.newSkew);
 
         vegaFee = vegaUtilFeeComps.vegaUtilFee;
         varianceFee = varianceFeeComps.varianceFee;
@@ -292,10 +264,7 @@ contract LyraQuoter {
             quoteParams.trade.exchangeParams.spotPrice
         );
 
-        (uint256 vegaFee, uint256 varianceFee) = _getOtherFees(
-            quoteParams,
-            feeParams
-        );
+        (uint256 vegaFee, uint256 varianceFee) = _getOtherFees(quoteParams, feeParams);
 
         fees = optionPriceFee + spotPriceFee + vegaFee + varianceFee;
     }
@@ -306,8 +275,7 @@ contract LyraQuoter {
         uint256 newBaseIv,
         uint256 newSkew
     ) internal view {
-        bool isPostCutoff = block.timestamp +
-            params.tradeLimitParams.tradingCutoff >
+        bool isPostCutoff = block.timestamp + params.tradeLimitParams.tradingCutoff >
             params.board.expiry;
         if (params.trade.isForceClose) {
             newBaseIv = baseIv;
@@ -342,28 +310,21 @@ contract LyraQuoter {
                     newBaseIv > params.tradeLimitParams.maxBaseIV ||
                     newSkew > params.tradeLimitParams.maxSkew
                 ) {
-                    revert IOptionMarketPricer
-                        .VolSkewOrBaseIvOutsideOfTradingBounds(
-                            address(this),
-                            params.trade.isBuy,
-                            IOptionMarketPricer.VolComponents(
-                                params.board.iv.multiplyDecimal(
-                                    params.strike.skew
-                                ),
-                                params.board.iv,
-                                params.strike.skew
-                            ),
-                            IOptionMarketPricer.VolComponents(
-                                newVol,
-                                newBaseIv,
-                                newSkew
-                            ),
-                            IOptionMarketPricer.VolComponents(
-                                params.tradeLimitParams.maxVol,
-                                params.tradeLimitParams.maxBaseIV,
-                                params.tradeLimitParams.maxSkew
-                            )
-                        );
+                    revert IOptionMarketPricer.VolSkewOrBaseIvOutsideOfTradingBounds(
+                        address(this),
+                        params.trade.isBuy,
+                        IOptionMarketPricer.VolComponents(
+                            params.board.iv.multiplyDecimal(params.strike.skew),
+                            params.board.iv,
+                            params.strike.skew
+                        ),
+                        IOptionMarketPricer.VolComponents(newVol, newBaseIv, newSkew),
+                        IOptionMarketPricer.VolComponents(
+                            params.tradeLimitParams.maxVol,
+                            params.tradeLimitParams.maxBaseIV,
+                            params.tradeLimitParams.maxSkew
+                        )
+                    );
                 }
             } else {
                 if (
@@ -371,65 +332,53 @@ contract LyraQuoter {
                     newBaseIv < params.tradeLimitParams.minBaseIV ||
                     newSkew < params.tradeLimitParams.minSkew
                 ) {
-                    revert IOptionMarketPricer
-                        .VolSkewOrBaseIvOutsideOfTradingBounds(
-                            address(this),
-                            params.trade.isBuy,
-                            IOptionMarketPricer.VolComponents(
-                                params.board.iv.multiplyDecimal(
-                                    params.strike.skew
-                                ),
-                                params.board.iv,
-                                params.strike.skew
-                            ),
-                            IOptionMarketPricer.VolComponents(
-                                newVol,
-                                newBaseIv,
-                                newSkew
-                            ),
-                            IOptionMarketPricer.VolComponents(
-                                params.tradeLimitParams.minVol,
-                                params.tradeLimitParams.minBaseIV,
-                                params.tradeLimitParams.minSkew
-                            )
-                        );
+                    revert IOptionMarketPricer.VolSkewOrBaseIvOutsideOfTradingBounds(
+                        address(this),
+                        params.trade.isBuy,
+                        IOptionMarketPricer.VolComponents(
+                            params.board.iv.multiplyDecimal(params.strike.skew),
+                            params.board.iv,
+                            params.strike.skew
+                        ),
+                        IOptionMarketPricer.VolComponents(newVol, newBaseIv, newSkew),
+                        IOptionMarketPricer.VolComponents(
+                            params.tradeLimitParams.minVol,
+                            params.tradeLimitParams.minBaseIV,
+                            params.tradeLimitParams.minSkew
+                        )
+                    );
                 }
             }
         }
 
-        BlackScholes.PricesDeltaStdVega memory pricesDeltaStdVega = BlackScholes
-            .pricesDeltaStdVega(
-                BlackScholes.BlackScholesInputs({
-                    timeToExpirySec: params.timeToExpiry,
-                    volatilityDecimal: newBaseIv.multiplyDecimal(newSkew),
-                    spotDecimal: params.trade.exchangeParams.spotPrice,
-                    strikePriceDecimal: params.strike.strikePrice,
-                    rateDecimal: params.greekCacheParameters.rateAndCarry
-                })
-            );
+        BlackScholes.PricesDeltaStdVega memory pricesDeltaStdVega = BlackScholes.pricesDeltaStdVega(
+            BlackScholes.BlackScholesInputs({
+                timeToExpirySec: params.timeToExpiry,
+                volatilityDecimal: newBaseIv.multiplyDecimal(newSkew),
+                spotDecimal: params.trade.exchangeParams.spotPrice,
+                strikePriceDecimal: params.strike.strikePrice,
+                rateDecimal: params.greekCacheParameters.rateAndCarry
+            })
+        );
 
         if (params.trade.isForceClose) {
             if (!isPostCutoff) {
                 if (
-                    pricesDeltaStdVega.callDelta >
-                    params.tradeLimitParams.minForceCloseDelta &&
+                    pricesDeltaStdVega.callDelta > params.tradeLimitParams.minForceCloseDelta &&
                     pricesDeltaStdVega.callDelta <
-                    (int(DecimalMath.UNIT) -
-                        params.tradeLimitParams.minForceCloseDelta)
+                    (int(DecimalMath.UNIT) - params.tradeLimitParams.minForceCloseDelta)
                 ) {
                     revert IOptionMarketPricer.ForceCloseDeltaOutOfRange(
                         address(this),
                         pricesDeltaStdVega.callDelta,
                         params.tradeLimitParams.minForceCloseDelta,
-                        (int(DecimalMath.UNIT) -
-                            params.tradeLimitParams.minForceCloseDelta)
+                        (int(DecimalMath.UNIT) - params.tradeLimitParams.minForceCloseDelta)
                     );
                 }
             }
         } else {
             if (
-                pricesDeltaStdVega.callDelta <
-                params.tradeLimitParams.minDelta ||
+                pricesDeltaStdVega.callDelta < params.tradeLimitParams.minDelta ||
                 pricesDeltaStdVega.callDelta >
                 int(DecimalMath.UNIT) - params.tradeLimitParams.minDelta
             ) {
@@ -447,8 +396,7 @@ contract LyraQuoter {
         QuoteParameters memory params,
         uint256 volTraded
     ) internal view returns (uint256 price, uint256 vol) {
-        bool isPostCutoff = block.timestamp +
-            params.tradeLimitParams.tradingCutoff >
+        bool isPostCutoff = block.timestamp + params.tradeLimitParams.tradingCutoff >
             params.board.expiry;
 
         (price, vol) = params.greekCache.getPriceForForceClose(
@@ -466,19 +414,15 @@ contract LyraQuoter {
         QuoteParameters memory params,
         int256 preTradeAmmNetStdVega
     ) internal view returns (QuoteIterationResult memory iterationResult) {
-        (iterationResult.newBaseIv, iterationResult.newSkew) = params
-            .optionPricer
-            .ivImpactForTrade(params.trade, baseIv, skew);
-        _checkIteration(
-            params,
+        (iterationResult.newBaseIv, iterationResult.newSkew) = params.optionPricer.ivImpactForTrade(
+            params.trade,
             baseIv,
-            iterationResult.newBaseIv,
-            iterationResult.newSkew
+            skew
         );
 
-        uint256 volTraded = iterationResult.newBaseIv.multiplyDecimal(
-            iterationResult.newSkew
-        );
+        _checkIteration(params, baseIv, iterationResult.newBaseIv, iterationResult.newSkew);
+
+        uint256 volTraded = iterationResult.newBaseIv.multiplyDecimal(iterationResult.newSkew);
 
         uint256 optionPrice;
 
@@ -496,11 +440,8 @@ contract LyraQuoter {
 
         int256 netStdVegaDiff = (params.globalCache.netGreeks.netStdVega *
             SafeCast.toInt256(params.trade.amount) *
-            (params.trade.isBuy ? int256(1) : int256(-1))) /
-            int(DecimalMath.UNIT);
-        iterationResult.postTradeAmmNetStdVega =
-            preTradeAmmNetStdVega +
-            netStdVegaDiff;
+            (params.trade.isBuy ? int256(1) : int256(-1))) / int(DecimalMath.UNIT);
+        iterationResult.postTradeAmmNetStdVega = preTradeAmmNetStdVega + netStdVegaDiff;
 
         FeeParameters memory feeParams = FeeParameters({
             volTraded: volTraded,
@@ -528,14 +469,8 @@ contract LyraQuoter {
         IOptionMarket.TradeDirection tradeDirection,
         bool isForceClose
     ) public view returns (uint256 totalPremium, uint256 totalFee) {
-        if (
-            isForceClose && tradeDirection != IOptionMarket.TradeDirection.CLOSE
-        ) {
-            revert InvalidTradeDirection(
-                address(this),
-                tradeDirection,
-                isForceClose
-            );
+        if (isForceClose && tradeDirection != IOptionMarket.TradeDirection.CLOSE) {
+            revert InvalidTradeDirection(address(this), tradeDirection, isForceClose);
         }
 
         QuoteParameters memory params = _composeQuote(
@@ -548,8 +483,7 @@ contract LyraQuoter {
             isForceClose
         );
 
-        int256 preTradeAmmNetStdVega = params.globalCache.netGreeks.netStdVega *
-            (-1);
+        int256 preTradeAmmNetStdVega = params.globalCache.netGreeks.netStdVega * (-1);
 
         uint256 baseIv = params.board.iv;
         uint256 skew = params.strike.skew;

@@ -161,9 +161,9 @@ describe("spread option market", async () => {
   });
 
   before("mint susd for depositors", async () => {
-    await sUSD.mint(depositor1.address, toBN("40000"));
-    await sUSD.mint(depositor2.address, toBN("64000"));
-    await sUSD.mint(depositor3.address, toBN("70000"));
+    await sUSD.mint(depositor1.address, toBN("60000"));
+    await sUSD.mint(depositor2.address, toBN("84000"));
+    await sUSD.mint(depositor3.address, toBN("90000"));
   });
 
   before("mint susd for traders", async () => {
@@ -225,8 +225,9 @@ describe("spread option market", async () => {
 
       const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1];
 
+      const maxLossPosted = strikeTrade1.maxTotalCost; // max loss is + maxloss + maxcost - premium + spread fee
       try {
-        await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('0'));
+        await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, maxLossPosted);
       } catch (error) {
         console.log({ error })
       }
@@ -265,11 +266,16 @@ describe("spread option market", async () => {
       )
 
       const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-
+      console.log({ maxLossPostedCollateral: fromBN('1310799713173767155407') })
       await expect(
-        spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('150'))).to.be.revertedWith(
-          'MaxLossRequirementNotMet',
-        );
+        spreadOptionMarket.connect(trader1).openPosition(
+          { positionId: 0, market: MARKET_KEY_ETH },
+          strikeTrades,
+          toBN('150')
+        )
+      ).to.be.revertedWith(
+        'MaxLossRequirementNotMet',
+      );
 
       const position = await spreadOptionToken.getOwnerPositions(trader1.address);
 
@@ -602,9 +608,9 @@ describe("spread option market", async () => {
       const optionMarketAfterClose = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
 
       // lp recovers funds 
+      expect(maxLossCollateralAfter).to.be.eq(toBN('0'));
       expect(endLPBalance).to.be.greaterThanOrEqual(startLPBalance);
       expect(traderBalance).to.be.greaterThan(traderBalanceBeforeClose);
-      expect(maxLossCollateralAfter).to.be.eq(toBN('0'));
       expect(optionMarketAfterClose).to.be.eq(toBN('0'));
 
     });
@@ -1003,7 +1009,7 @@ describe("spread option market", async () => {
 
     //   const positions = await spreadOptionToken.getOwnerPositions(trader1.address);
     //   const position = positions[0];
-
+    //   console.log({ positions })
     //   // console.log({
     //   //   tradeResults: tradeResults.map(trade => {
     //   //     return { positionId: fromBN(trade.positionId), amount: fromBN(trade.amount) };
@@ -1026,7 +1032,7 @@ describe("spread option market", async () => {
     //     return { ...tradeResult, amount: amounts[fromBN(tradeResult.positionId)] }
     //   })
 
-    //   await spreadOptionMarket.connect(trader1).closePosition(position.market, position.positionId, tradeResults);
+    //   await spreadOptionMarket.connect(trader1).closePosition(position.market, position.positionId, false, tradeResults);
 
     //   const traderBalance = parseInt(fromBN(await sUSD.balanceOf(trader1.address)))
     //   const endLPBalance = parseInt(fromBN(await sUSD.balanceOf(spreadLiquidityPool.address)))
@@ -1052,6 +1058,149 @@ describe("spread option market", async () => {
 
   });
 
+  describe("deposit into lp open and close part of a position after spot price moves significantly", () => {
+
+    let startLPBalance = 0;
+    let strikeTrade1: ITradeTypes.TradeInputParametersStruct;
+    let strikeTrade2: ITradeTypes.TradeInputParametersStruct;
+    let strikeTrade3: ITradeTypes.TradeInputParametersStruct;
+
+    let tradeResults: any[];
+
+    let boardId = toBN("0");
+    let strikes: BigNumber[] = [];
+
+    before("init board", async () => {
+
+      await TestSystem.marketActions.mockPrice(lyraTestSystem, toBN("3000"), 'sETH');
+
+      await TestSystem.marketActions.createBoard(lyraTestSystem, {
+        expiresIn: lyraConstants.DAY_SEC * 7,
+        baseIV: "0.8",
+        strikePrices: ["2500", "2600", "2700", "2800", "2900", "3000", "3100"],
+        skews: ["1.3", "1.2", "1.1", "1", "1.1", "1.3", "1.3"],
+      })
+
+    })
+
+    before("set board id", async () => {
+      const boards = await lyraTestSystem.optionMarket.getLiveBoards();
+      boardId = boards[2];
+      console.log({ boardId, boards })
+      await lyraTestSystem.optionGreekCache.updateBoardCachedGreeks(boardId);
+
+      await lyraEvm.fastForward(600);
+    })
+
+    before("set strikes array", async () => {
+      strikes = await lyraTestSystem.optionMarket.getBoardStrikes(boardId);
+    });
+
+    before("depositors deposit into liquidity pool", async () => {
+
+      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('5000'));
+      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('5000'));
+
+      await sUSD.connect(depositor2).approve(spreadLiquidityPool.address, toBN('12000'));
+      await spreadLiquidityPool.connect(depositor2).initiateDeposit(depositor1.address, toBN('12000'));
+
+      await sUSD.connect(depositor3).approve(spreadLiquidityPool.address, toBN('3000'));
+      await spreadLiquidityPool.connect(depositor3).initiateDeposit(depositor1.address, toBN('3000'));
+
+
+    });
+
+    it("should do a simple check on spread trade validity", async () => {
+
+      strikeTrade1 = await buildOrderWithQuote(
+        strikes[2],
+        0,// option type (long call 0),
+        toBN('5'),
+        0
+      );
+
+      strikeTrade2 = await buildOrderWithQuote(
+        strikes[2],
+        3, // option type (short call 3)
+        toBN('2'),
+        0
+      )
+
+      strikeTrade3 = await buildOrderWithQuote(
+        strikes[3],
+        3, // option type (short call 3)
+        toBN('1'),
+        0
+      )
+
+      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
+      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'));
+
+      const rc = await tx.wait(); // 0ms, as tx is already confirmed
+      const event = rc.events?.find(
+        (event: { event: string }) => event.event === "Trade"
+      );
+      // @ts-ignore
+      const [
+        trader,
+        sellResults,
+        buyResults,
+        totalCollateralToAdd, // borrowed
+        fee,
+        maxCost
+      ] = event?.args;
+
+
+      // convert trade results for future close
+      tradeResults = convertResultToTradeParams([...sellResults, ...buyResults])
+
+      // get position id and event
+      const position = await spreadOptionToken.getOwnerPositions(trader1.address);
+
+      expect(position.length).to.be.eq(1);
+
+    })
+
+    it("should be able to partially close position on spread market and lyra option markets without settling", async () => {
+
+      // const positions = await spreadOptionToken.getOwnerPositions(trader1.address);
+      // const position = positions[0];
+      // await spreadOptionMarket.connect(trader1).closePosition(position.market, position.positionId, true, tradeResults.map(result => ({ ...result, amount: toBN('.1') })));
+
+    })
+
+    // it("should be able to close position on lyra and settle on otus", async () => {
+
+    //   const optionMarketBeforeClose = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
+    //   expect(optionMarketBeforeClose).to.be.eq(toBN('0'));
+    //   const traderBalanceBeforeClose = parseInt(fromBN(await sUSD.balanceOf(trader1.address)))
+
+    //   // big profit on buys
+    //   // big loss on sells (lp must recover)
+    //   await TestSystem.marketActions.mockPrice(lyraTestSystem, toBN("1200"), 'sETH');
+    //   await lyraEvm.fastForward(60000);
+
+
+    //   const positions = await spreadOptionToken.getOwnerPositions(trader1.address);
+    //   const position = positions[0];
+
+    //   await spreadOptionMarket.connect(trader1).closePosition(position.market, position.positionId, true, tradeResults.map(result => ({ ...result, amount: toBN('.1') })));
+
+    //   const traderBalance = parseInt(fromBN(await sUSD.balanceOf(trader1.address)))
+    //   const endLPBalance = parseInt(fromBN(await sUSD.balanceOf(spreadLiquidityPool.address)))
+    //   const maxLossCollateralAfter = parseInt(fromBN(await sUSD.balanceOf(spreadMaxLossCollateral.address)));
+    //   const optionMarketAfterClose = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
+
+    //   // lp recovers funds 
+    //   expect(endLPBalance).to.be.greaterThanOrEqual(startLPBalance);
+    //   // max loss posted already but may need to recover fees form user
+    //   expect(traderBalance).to.be.greaterThan(traderBalanceBeforeClose);
+    //   expect(maxLossCollateralAfter).to.be.eq(toBN('0'));
+    //   expect(optionMarketAfterClose).to.be.eq(toBN('0'));
+
+    // });
+
+  });
 });
 
 const convertResultToTradeParams = (results: any[]): any[] => {

@@ -23,10 +23,19 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
  * @author Otus
  * @dev Holds funds from LPs. Used for the following purposes:
  * 1. Collateralizing short options on Lyra.
- * 2. Lends funds to traders through spread option market.
+ * 2. Lends funds to traders through spread option market and other token markets.
  */
 contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     using DecimalMath for uint;
+
+    struct Liquidity {
+        // Amount of liquidity available for option collateral and premiums
+        uint freeLiquidity;
+        // Amount of liquidity available for withdrawals - different to freeLiquidity
+        uint burnableLiquidity;
+        // Net asset value, including everything and netOptionValue
+        uint NAV;
+    }
 
     struct LiquidityPoolParameters {
         // Minimum amount accepted as deposit / min withdrawal
@@ -45,6 +54,13 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         address guardianMultisig;
     }
 
+    struct CircuitBreakerParameters {
+        // Percentage of NAV below which the liquidity CB fires
+        uint liquidityCBThreshold;
+        // Length of time after the liq. CB stops firing during which deposits/withdrawals are still blocked
+        uint liquidityCBTimeout;
+    }
+
     struct QueuedWithdrawal {
         uint id;
         // Who will receive the quoteAsset returned after burning the LiquidityToken
@@ -55,6 +71,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         uint quoteSent;
         // block timestamp withdrawal requested
         uint withdrawInitiatedTime;
+        // lp token price at time of withdrawal (includes fees)
+        uint tokenPriceAtWithdrawal;
     }
 
     /************************************************
@@ -63,10 +81,14 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
 
     SpreadOptionMarket public spreadOptionMarket;
 
+    // @dev Collateral
     ERC20 public quoteAsset;
 
     /// @dev Parameters relating to depositing and withdrawing from the Otus Spread LP
     LiquidityPoolParameters public lpParams;
+
+    /// @dev Parameters relating to circuit breakers
+    CircuitBreakerParameters public cbParams;
 
     mapping(uint => QueuedWithdrawal) public queuedWithdrawals;
     uint public totalQueuedWithdrawals = 0;
@@ -77,6 +99,10 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
 
     /// @dev Amount of collateral locked for outstanding calls and puts sold for users
     uint public lockedLiquidity;
+
+    // timestamp for when deposits/withdrawals will be available to deposit/withdraw
+    // This checks if liquidity is all used - adds 3 days to block.timestamp if it is
+    uint public CBTimestamp = 0;
 
     /************************************************
      *  MODIFIERS
@@ -102,10 +128,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      * @notice initialize users account
      * @param _spreadOptionMarket SpreadOptionMarket
      */
-    function initialize(
-        address payable _spreadOptionMarket,
-        address _quoteAsset
-    ) external onlyOwner {
+    function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner {
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
         quoteAsset = ERC20(_quoteAsset);
     }
@@ -113,18 +136,11 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     /************************************************
      * ADMIN - SETTINGS
      ***********************************************/
-    // MINIMUM DEPOSIT
-    // LOCK PERIOD
-    // QUEUE PERIOD - WITHDRAW
-    // QUEUE PERIOD - DEPOSIT
-
     /**
      * @notice set `LiquidityPoolParameteres`
      * @ param _lpParams liquidity parameters
      */
-    function setLiquidityPoolParameters(
-        LiquidityPoolParameters memory _lpParams
-    ) external onlyOwner {
+    function setLiquidityPoolParameters(LiquidityPoolParameters memory _lpParams) external onlyOwner {
         if (
             !(_lpParams.withdrawalDelay < 365 days &&
                 _lpParams.withdrawalFee < 5e15 && // .5% max
@@ -139,6 +155,16 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         emit LiquidityPoolParametersUpdated(lpParams);
     }
 
+    function setCircuiteBreakerParemeters(CircuitBreakerParameters memory _cbParams) external onlyOwner {
+        if (!(_cbParams.liquidityCBThreshold < DecimalMath.UNIT && _cbParams.liquidityCBTimeout < 60 days)) {
+            revert InvalidCircuitBreakerParameters(address(this), _cbParams);
+        }
+
+        cbParams = _cbParams;
+
+        emit CircuitBreakerParametersUpdated(cbParams);
+    }
+
     /************************************************
      *  DEPOSIT AND WITHDRAW
      ***********************************************/
@@ -149,6 +175,12 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      * @param _amountQuote Amount of Quote Asset
      */
     function initiateDeposit(address _beneficiary, uint _amountQuote) external nonReentrant {
+        // USDC
+        // uint realQuote = amountQuote;
+
+        // // Convert to 18 dp for LP token minting
+        // amountQuote = ConvertDecimals.convertTo18(amountQuote, quoteAsset.decimals());
+
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
         }
@@ -156,51 +188,47 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
             revert MinimumDepositNotMet(address(this), _amountQuote, lpParams.minDepositWithdraw);
         }
 
-        uint tokenPrice = getTokenPrice();
+        Liquidity memory liquidity = getLiquidity();
+        uint tokenPrice = _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
+
         uint amountTokens = _amountQuote.divideDecimal(tokenPrice);
+
         _mint(_beneficiary, amountTokens);
-        emit DepositProcessed(
-            msg.sender,
-            _beneficiary,
-            0,
-            _amountQuote,
-            tokenPrice,
-            amountTokens,
-            block.timestamp
-        );
+        emit DepositProcessed(msg.sender, _beneficiary, 0, _amountQuote, tokenPrice, amountTokens, block.timestamp);
 
         if (!quoteAsset.transferFrom(msg.sender, address(this), _amountQuote)) {
             revert QuoteTransferFailed(address(this), msg.sender, address(this), _amountQuote);
         }
     }
 
-    function initiateWithdraw(
-        address _beneficiary,
-        uint _amountLiquidityToken
-    ) public nonReentrant {
+    /**
+     * @notice LP instantly burns LiquidityToken, signalling they wish to withdraw
+     *         their share of the pool in exchange for quote, to be processed instantly (if no live boards)
+     *         or after the delay period passes (including CBs).
+     *         This action is not reversible.
+     *
+     *
+     * @param _beneficiary will receive
+     * @param _amountLiquidityToken: is the amount of LiquidityToken the LP is withdrawing
+     */
+    function initiateWithdraw(address _beneficiary, uint _amountLiquidityToken) public nonReentrant {
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
         }
-        if (_amountLiquidityToken < lpParams.minDepositWithdraw) {
-            revert MinimumWithdrawNotMet(
-                address(this),
-                _amountLiquidityToken,
-                lpParams.minDepositWithdraw
-            );
+
+        Liquidity memory liquidity = getLiquidity();
+        uint tokenPrice = _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
+
+        uint withdrawalValue = _amountLiquidityToken.multiplyDecimal(tokenPrice);
+
+        if (withdrawalValue < lpParams.minDepositWithdraw && _amountLiquidityToken < lpParams.minDepositWithdraw) {
+            revert MinimumWithdrawNotMet(address(this), withdrawalValue, lpParams.minDepositWithdraw);
         }
         // if no spreadOptionMarket trades are using collateral
-        // if enough free collateral to withdrwa
+        // if enough free collateral to withdraw
         if (lockedLiquidity == 0) {
-            uint tokenPrice = getTokenPrice();
-            uint quoteReceived = _amountLiquidityToken.multiplyDecimal(tokenPrice);
-
-            if (!quoteAsset.transfer(_beneficiary, quoteReceived)) {
-                revert QuoteTransferFailed(
-                    address(this),
-                    address(this),
-                    _beneficiary,
-                    quoteReceived
-                );
+            if (!quoteAsset.transfer(_beneficiary, withdrawalValue)) {
+                revert QuoteTransferFailed(address(this), address(this), _beneficiary, withdrawalValue);
             }
             emit WithdrawProcessed(
                 msg.sender,
@@ -208,7 +236,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
                 0,
                 _amountLiquidityToken,
                 tokenPrice,
-                quoteReceived,
+                withdrawalValue,
                 totalQueuedWithdrawals,
                 block.timestamp
             );
@@ -220,6 +248,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
             newWithdrawal.beneficiary = _beneficiary;
             newWithdrawal.amountTokens = _amountLiquidityToken;
             newWithdrawal.withdrawInitiatedTime = block.timestamp;
+            // only fees increase token price - queued withdrawal wont collect fees
+            newWithdrawal.tokenPriceAtWithdrawal = tokenPrice;
 
             totalQueuedWithdrawals += _amountLiquidityToken;
 
@@ -238,17 +268,13 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     // can only process once boards are settled
     function processWithdrawalQueue(uint limit) external nonReentrant {
         for (uint i = 0; i < limit; i++) {
-            (uint totalTokensBurnable, uint tokenPriceWithFee) = _getBurnableTokensAndAddFee();
-
             QueuedWithdrawal storage current = queuedWithdrawals[queuedWithdrawalHead];
 
-            if (
-                !_canProcess(
-                    current.withdrawInitiatedTime,
-                    lpParams.withdrawalDelay,
-                    queuedWithdrawalHead
-                )
-            ) {
+            (uint totalTokensBurnable, uint tokenPriceWithFee) = _getBurnableTokensAndAddFee(
+                current.tokenPriceAtWithdrawal
+            );
+
+            if (!_canProcess(current.withdrawInitiatedTime, lpParams.withdrawalDelay, queuedWithdrawalHead)) {
                 break;
             }
 
@@ -327,47 +353,39 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     /// @dev Checks if deposit/withdrawal ticket can be processed
-    function _canProcess(
-        uint initiatedTime,
-        uint minimumDelay,
-        uint entryId
-    ) internal view returns (bool) {
+    function _canProcess(uint initiatedTime, uint minimumDelay, uint entryId) internal returns (bool) {
         bool validEntry = initiatedTime != 0;
         // bypass circuit breaker and stale checks if the guardian is calling and their delay has passed
         bool guardianBypass = msg.sender == lpParams.guardianMultisig &&
             initiatedTime + lpParams.guardianDelay < block.timestamp;
         // if minimum delay or circuit breaker timeout hasn't passed, we can't process
-        //        bool delaysExpired = initiatedTime + minimumDelay < block.timestamp && CBTimestamp < block.timestamp;
+        bool delaysExpired = initiatedTime + minimumDelay < block.timestamp && CBTimestamp < block.timestamp;
 
-        bool delaysExpired = initiatedTime + minimumDelay < block.timestamp;
-
-        // emit CheckingCanProcess(entryId, !isStale, validEntry, guardianBypass, delaysExpired);
+        emit CheckingCanProcess(entryId, validEntry, guardianBypass, delaysExpired);
 
         return validEntry && (delaysExpired || guardianBypass);
     }
 
-    function _getBurnableTokensAndAddFee()
-        internal
-        view
-        returns (uint burnableTokens, uint tokenPriceWithFee)
-    {
-        (uint tokenPrice, uint burnableLiquidity) = _getTokenPriceAndBurnableLiquidity();
+    function _getBurnableTokensAndAddFee(
+        uint _tokenPriceAtWithdrawal
+    ) internal returns (uint burnableTokens, uint tokenPriceWithFee) {
+        Liquidity memory liquidity = _getLiquidityAndUpdateCB();
+        uint burnableLiquidity = liquidity.burnableLiquidity;
 
         tokenPriceWithFee = (lockedLiquidity != 0)
-            ? tokenPrice.multiplyDecimal(DecimalMath.UNIT - lpParams.withdrawalFee)
-            : tokenPrice;
+            ? _tokenPriceAtWithdrawal.multiplyDecimal(DecimalMath.UNIT - lpParams.withdrawalFee)
+            : _tokenPriceAtWithdrawal;
+
         return (burnableLiquidity.divideDecimal(tokenPriceWithFee), tokenPriceWithFee);
     }
 
-    function _getTokenPriceAndBurnableLiquidity()
-        internal
-        view
-        returns (uint tokenPrice, uint burnableLiquidity)
-    {
-        uint _freeLiquidity = freeLiquidity();
-        tokenPrice = getTokenPrice();
+    function _getTokenPriceAndBurnableLiquidity() internal returns (uint tokenPrice, uint burnableLiquidity) {
+        Liquidity memory liquidity = _getLiquidityAndUpdateCB();
+        uint totalTokenSupply = getTotalTokenSupply();
 
-        return (tokenPrice, _freeLiquidity);
+        tokenPrice = _getTokenPrice(liquidity.NAV, totalTokenSupply);
+
+        return (tokenPrice, liquidity.burnableLiquidity);
     }
 
     /************************************************
@@ -392,15 +410,10 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
 
     // @dev lock liquidity
     function _lockLiquidity(uint _amount) internal {
-        uint _freeLiquidity = freeLiquidity();
+        Liquidity memory liquidity = getLiquidity();
 
-        if (_amount > _freeLiquidity) {
-            revert LockingMoreQuoteThanIsFree(
-                address(this),
-                _amount,
-                _freeLiquidity,
-                lockedLiquidity
-            );
+        if (_amount > liquidity.freeLiquidity) {
+            revert LockingMoreQuoteThanIsFree(address(this), _amount, liquidity.freeLiquidity, lockedLiquidity);
         }
 
         lockedLiquidity = lockedLiquidity + _amount;
@@ -408,18 +421,107 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
 
     // @dev free previously locked liquidity
     // @dev only spread option market
+    // @dev should only be freed when collateral is returned
     function freeLockedLiquidity(uint _amount) public onlySpreadOptionMarket {
+        Liquidity memory liquidity = getLiquidity(); // calculates total pool value
+
         lockedLiquidity = lockedLiquidity - _amount;
-        // emit ShortCollateralFreed(_amount)
+
+        emit ShortCollateralFreed(_amount, liquidity);
+    }
+
+    /************************************************
+     *  CIRCUIT BREAKERS
+     ***********************************************/
+    /// @notice Checks the liquidity circuit breakers and triggers if necessary
+    function updateCBs() external nonReentrant {
+        _getLiquidityAndUpdateCB();
+    }
+
+    function _getLiquidityAndUpdateCB() internal returns (Liquidity memory liquidity) {
+        liquidity = getLiquidity();
+        _updateCBs(liquidity);
+    }
+
+    function _updateCBs(Liquidity memory liquidity) internal {
+        if (lockedLiquidity == 0) {
+            return;
+        }
+
+        uint timeToAdd = 0;
+
+        uint freeLiquidityPercent = liquidity.freeLiquidity.divideDecimal(liquidity.NAV);
+
+        bool liquidityThresholdCrossed = freeLiquidityPercent < cbParams.liquidityCBThreshold;
+
+        if (liquidityThresholdCrossed && cbParams.liquidityCBTimeout > timeToAdd) {
+            timeToAdd = cbParams.liquidityCBTimeout;
+        }
+
+        if (timeToAdd > 0 && CBTimestamp < block.timestamp + timeToAdd) {
+            CBTimestamp = block.timestamp + timeToAdd;
+            emit CircuitBreakerUpdated(CBTimestamp, liquidityThresholdCrossed);
+        }
     }
 
     /************************************************
      *  GET POOL LIQUIDITY
      ***********************************************/
 
-    function freeLiquidity() public view returns (uint liquidity) {
+    function getLiquidity() public view returns (Liquidity memory) {
+        uint totalPoolValue = _getTotalPoolValueQuote();
+
+        uint tokenPrice = _getTokenPrice(totalPoolValue, getTotalTokenSupply());
+
+        Liquidity memory liquidity = _getLiquidity(totalPoolValue, tokenPrice.multiplyDecimal(totalQueuedWithdrawals));
+
+        return liquidity;
+    }
+
+    function _getLiquidity(uint totalPoolValue, uint reservedTokenValue) internal view returns (Liquidity memory) {
+        Liquidity memory liquidity = Liquidity(0, 0, 0);
+
+        uint availableQuote = _totalQuote();
+
+        liquidity.freeLiquidity = availableQuote > reservedTokenValue ? availableQuote - reservedTokenValue : 0;
+        liquidity.burnableLiquidity = availableQuote;
+        liquidity.NAV = totalPoolValue;
+
+        return liquidity;
+    }
+
+    function _totalQuote() internal view returns (uint total) {
         // free liquidity excludes queued withdrawals
-        liquidity = quoteAsset.balanceOf(address(this));
+        total = quoteAsset.balanceOf(address(this));
+    }
+
+    /************************************************
+     *  POOL TOKEN VALUE
+     ***********************************************/
+
+    /// @dev Get current pool token price without market condition check
+    function getTokenPrice() public view returns (uint) {
+        Liquidity memory liquidity = getLiquidity();
+        return _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
+    }
+
+    function _getTokenPrice(uint totalPoolValue, uint totalTokenSupply) internal pure returns (uint) {
+        if (totalTokenSupply == 0) {
+            return 1e18;
+        }
+
+        return totalPoolValue.divideDecimal(totalTokenSupply);
+    }
+
+    function _getTotalPoolValueQuote() internal view returns (uint) {
+        int totalAssetValue = SafeCast.toInt256(quoteAsset.balanceOf(address(this)) + lockedLiquidity);
+
+        return uint(totalAssetValue);
+    }
+
+    /// @dev Get total number of oustanding LiquidityPool Token
+    function getTotalTokenSupply() public view returns (uint) {
+        return totalSupply() + totalQueuedWithdrawals;
     }
 
     /************************************************
@@ -436,39 +538,6 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         uint durationFee = lpParams.fee.multiplyDecimal(durationOfYearPct);
 
         fee = _amount.multiplyDecimal(durationFee);
-    }
-
-    /************************************************
-     *  POOL TOKEN VALUE
-     ***********************************************/
-
-    /// @dev Get current pool token price without market condition check
-    function getTokenPrice() public view returns (uint) {
-        return _getTokenPrice(getTotalPoolValueQuote(), getTotalTokenSupply());
-    }
-
-    function _getTokenPrice(
-        uint totalPoolValue,
-        uint totalTokenSupply
-    ) internal pure returns (uint) {
-        if (totalTokenSupply == 0) {
-            return 1e18;
-        }
-
-        return totalPoolValue.divideDecimal(totalTokenSupply);
-    }
-
-    function getTotalPoolValueQuote() internal view returns (uint) {
-        int totalAssetValue = SafeCast.toInt256(
-            quoteAsset.balanceOf(address(this)) + lockedLiquidity
-        );
-
-        return uint(totalAssetValue);
-    }
-
-    /// @dev Get total number of oustanding LiquidityPool Token
-    function getTotalTokenSupply() public view returns (uint) {
-        return totalSupply() + totalQueuedWithdrawals;
     }
 
     /************************************************
@@ -496,15 +565,19 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
 
     error CollateralTransferToMarketFail(uint amount);
 
-    error LockingMoreQuoteThanIsFree(
-        address thrower,
-        uint quoteToLock,
-        uint freeLiquidity,
-        uint lockedLiquidity
-    );
+    error LockingMoreQuoteThanIsFree(address thrower, uint quoteToLock, uint freeLiquidity, uint lockedLiquidity);
+
+    error InvalidCircuitBreakerParameters(address thrower, CircuitBreakerParameters cbParams);
+
     /************************************************
      *  EVENTS
      ***********************************************/
+    /// @dev Emitted whenever the CB timestamp is updated
+    event CircuitBreakerUpdated(uint newTimestamp, bool liquidityThresholdCrossed);
+
+    /// @dev Emitted whenever the circuit breaker parameters are updated
+    event CircuitBreakerParametersUpdated(CircuitBreakerParameters cbParams);
+
     event WithdrawPartiallyProcessed(
         address indexed caller,
         address indexed beneficiary,
@@ -560,4 +633,9 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     event CollateralReturnFailed(address thrower, uint amount);
 
     event ShortCollateralSent(uint amount, uint freeBalance);
+
+    event ShortCollateralFreed(uint amount, Liquidity liquidity);
+
+    /// @dev Emitted whenever a queue item is checked for the ability to be processed
+    event CheckingCanProcess(uint entryId, bool validEntry, bool guardianBypass, bool delaysExpired);
 }

@@ -27,22 +27,8 @@ import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/
  * @author Otus
  * @dev Provides a tokenized representation of each trade position including amount of options and collateral used from Pool.
  */
-contract SpreadOptionToken is
-    Ownable,
-    SimpleInitializeable,
-    ReentrancyGuard,
-    ERC721Enumerable,
-    ITradeTypes
-{
+contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ERC721Enumerable, ITradeTypes {
     using SafeDecimalMath for uint;
-
-    enum PositionState {
-        EMPTY,
-        ACTIVE,
-        CLOSED,
-        LIQUIDATED,
-        SETTLED
-    }
 
     enum PositionUpdatedType {
         OPENED,
@@ -70,6 +56,7 @@ contract SpreadOptionToken is
     }
 
     struct SpreadOptionPosition {
+        uint size;
         address trader;
         bytes32 market;
         uint positionId;
@@ -146,16 +133,70 @@ contract SpreadOptionToken is
         uint _maxLossPosted
     ) public onlySpreadOptionMarket returns (uint) {
         return
-            _adjustPosition(
+            _openPosition(
                 _trader,
                 _tradeInfo.market,
                 _sellResults,
                 _buyResults,
                 _tradeInfo.positionId, // position id
                 _totalSetCollateralTo,
-                _maxLossPosted,
-                true
+                _maxLossPosted
             );
+    }
+
+    /**
+     * @notice Closes position amount and decreases maxloss
+     * opened/closed/forceclosed/liquidated
+     * @param _trader owner
+     * @param _partialSum owner
+     * @param _positionId owner
+     * @param _sellResults results from trade
+     * @param _buyResults results from trade
+     */
+    function closePosition(
+        address _trader,
+        uint _partialSum, // multiply partial sum to previous maxloss posted and set new maxloss
+        uint _positionId,
+        TradeResult[] memory _sellResults,
+        TradeResult[] memory _buyResults
+    ) public onlySpreadOptionMarket {
+        SpreadOptionPosition storage position;
+
+        if (_positionId == 0) {
+            revert CannotClosePositionZero(address(this));
+        }
+
+        position = positions[_positionId];
+
+        if (_trader != ownerOf(position.positionId)) {
+            revert OnlyOwnerCanAdjustPosition(address(this), _positionId, _trader, ownerOf(position.positionId));
+        }
+
+        if (_partialSum > 0) {
+            position.maxLossPosted -= position.maxLossPosted.multiplyDecimal(_partialSum.divideDecimal(position.size));
+            for (uint i = 0; i < _sellResults.length; i++) {
+                TradeResult memory result = _sellResults[i];
+                position.size -= result.amount;
+            }
+
+            for (uint i = 0; i < _buyResults.length; i++) {
+                TradeResult memory result = _buyResults[i];
+                position.size -= result.amount;
+            }
+
+            console.log(position.size);
+        } else {
+            position.maxLossPosted = 0;
+            position.state = PositionState.CLOSED;
+        }
+
+        emit PositionUpdated(
+            position.positionId,
+            _trader,
+            _partialSum > 0 ? PositionUpdatedType.ADJUSTED : PositionUpdatedType.CLOSED,
+            position,
+            block.timestamp
+        );
     }
 
     /**
@@ -167,26 +208,19 @@ contract SpreadOptionToken is
      * @param _positionId refers to SpreadOptionsPosition
      * @param _totalSetCollateralTo total collateral borrowed
      * @param _maxLossPosted max loss posted by user
-     * @param _isOpen opening new position
-     * @dev may need to combine the results and trades arrays
      */
-    function _adjustPosition(
+    function _openPosition(
         address _trader,
         bytes32 _market,
         TradeResult[] memory _sellResults,
         TradeResult[] memory _buyResults,
         uint _positionId,
         uint _totalSetCollateralTo,
-        uint _maxLossPosted,
-        bool _isOpen
+        uint _maxLossPosted
     ) internal returns (uint) {
         SpreadOptionPosition storage position;
         bool newPosition = false;
         if (_positionId == 0) {
-            if (!_isOpen) {
-                revert CannotClosePositionZero(address(this));
-            }
-
             _positionId = nextId++;
             _mint(_trader, _positionId);
             position = positions[_positionId];
@@ -207,11 +241,13 @@ contract SpreadOptionToken is
             for (uint i = 0; i < _sellResults.length; i++) {
                 TradeResult memory result = _sellResults[i];
                 position.allPositions[i] = result.positionId;
+                position.size += result.amount;
             }
 
             for (uint i = 0; i < _buyResults.length; i++) {
                 TradeResult memory result = _buyResults[i];
                 position.allPositions[sellLen + i] = result.positionId;
+                position.size += result.amount;
             }
 
             newPosition = true;
@@ -225,18 +261,7 @@ contract SpreadOptionToken is
         // they can close or add size
 
         if (_trader != ownerOf(position.positionId)) {
-            revert OnlyOwnerCanAdjustPosition(
-                address(this),
-                _positionId,
-                _trader,
-                ownerOf(position.positionId)
-            );
-        }
-
-        if (_isOpen) {
-            // multiple positionids from lyra need to keep them in state and update them easily
-        } else {
-            position.collateralBorrowed = 0;
+            revert OnlyOwnerCanAdjustPosition(address(this), _positionId, _trader, ownerOf(position.positionId));
         }
 
         emit PositionUpdated(
@@ -254,9 +279,7 @@ contract SpreadOptionToken is
      * UTILS
      ***********************************************/
 
-    function getPosition(
-        uint _spreadPositionId
-    ) external view returns (SpreadOptionPosition memory position) {
+    function getPosition(uint _spreadPositionId) external view returns (SpreadOptionPosition memory position) {
         position = positions[_spreadPositionId];
     }
 
@@ -265,9 +288,7 @@ contract SpreadOptionToken is
      * @param target owner address
      * @dev Meant to be used offchain as it can run out of gas
      */
-    function getOwnerPositions(
-        address target
-    ) external view returns (SpreadOptionPosition[] memory) {
+    function getOwnerPositions(address target) external view returns (SpreadOptionPosition[] memory) {
         uint balance = balanceOf(target);
         SpreadOptionPosition[] memory result = new SpreadOptionPosition[](balance);
         for (uint i = 0; i < balance; ++i) {
@@ -291,19 +312,17 @@ contract SpreadOptionToken is
     /**
      * @notice Ensure all positions are settled on lyra
      * @param _spreadPostionId Position Id of Spread Option traded
-     * @return trader address of owner
      * @return settledPositions position info
      */
     function checkLyraPositionsSettled(
         uint _spreadPostionId
-    ) external view returns (address trader, SettledPosition[] memory settledPositions) {
+    ) external view returns (SettledPosition[] memory settledPositions) {
         SpreadOptionPosition storage position = positions[_spreadPostionId];
 
         if (position.positionId == 0) {
             revert SpreadOptionPositionNotValid(_spreadPostionId);
         }
 
-        trader = position.trader;
         uint positionsLen = position.allPositions.length;
         settledPositions = new SettledPosition[](positionsLen);
 
@@ -315,9 +334,7 @@ contract SpreadOptionToken is
 
         // can't use getPositionsWithOwner because option token has been burned on settlement by lyra
         //  use getOptionPositions
-        OptionToken.OptionPosition[] memory optionPositions = optionToken.getOptionPositions(
-            position.allPositions
-        );
+        OptionToken.OptionPosition[] memory optionPositions = optionToken.getOptionPositions(position.allPositions);
 
         uint strikePrice;
         uint priceAtExpiry;
@@ -326,11 +343,9 @@ contract SpreadOptionToken is
         for (uint i = 0; i < optionPositions.length; i++) {
             OptionToken.OptionPosition memory lyraPosition = optionPositions[i];
             // state closed - collateral routing handled on close
-            // state liquidated - handled by keeper for edge case
+            // @dev to do state liquidated - handled by keeper for edge case
             if (lyraPosition.state == OptionToken.PositionState.SETTLED) {
-                (strikePrice, priceAtExpiry, ) = optionMarket.getSettlementParameters(
-                    lyraPosition.strikeId
-                );
+                (strikePrice, priceAtExpiry, ) = optionMarket.getSettlementParameters(lyraPosition.strikeId);
 
                 settledPositions[i] = SettledPosition({
                     trader: position.trader,
@@ -385,12 +400,7 @@ contract SpreadOptionToken is
     error CannotClosePositionZero(address thrower);
 
     /// @dev only trader
-    error OnlyOwnerCanAdjustPosition(
-        address thrower,
-        uint positionId,
-        address trader,
-        address owner
-    );
+    error OnlyOwnerCanAdjustPosition(address thrower, uint positionId, address trader, address owner);
 
     /// @dev position not settled in lyra
     error LyraPositionNotSettled(OptionToken.OptionPosition lyraPosition);

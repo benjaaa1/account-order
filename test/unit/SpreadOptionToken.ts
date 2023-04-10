@@ -131,59 +131,8 @@ describe("spread option token testing", async () => {
     await sUSD.mint(depositor3.address, toBN("300"));
   });
 
-  describe("deposit to liquidity pool and get lp tokens", () => {
+  describe("", () => {
 
-    it("deposits immediately for first depositor", async () => {
-      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('100'));
-      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('100'));
-      expect(await sUSD.balanceOf(spreadLiquidityPool.address)).to.be.eq(toBN('100'));
-      expect(await spreadLiquidityPool.balanceOf(depositor1.address)).to.be.eq(toBN('100'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('100'));
-      expect(await sUSD.balanceOf(depositor2.address)).to.be.eq(toBN('100'));
-    })
-
-    it("only depositor should be able to withdraw immediately", async () => {
-      // await expect(spreadLiquidityPool.connect(depositor2).initiateWithdraw(depositor1.address, toBN('50')).to.be.reverted);
-
-      await expect(
-        spreadLiquidityPool.connect(depositor2).initiateWithdraw(depositor1.address, toBN('50'))).to.be.revertedWith(
-          'ERC20: burn amount exceeds balance',
-        );
-
-      await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, toBN('50'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('150'));
-      expect(await spreadLiquidityPool.balanceOf(depositor1.address)).to.be.eq(toBN('50'));
-
-    })
-
-  });
-
-  describe("token price with no option market transactions or withdrawals", () => {
-
-    it("has token price of 1 with no deposits", async () => {
-      const tokenPrice = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPrice).to.be.eq(toBN('1'))
-    })
-
-    before("deposit funds in liquidity pool", async () => {
-      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('100'));
-      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('100'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('50'));
-    })
-
-    it("has token price of 1 with only deposits and deposits equal to quote funds", async () => {
-      const tokenPrice = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPrice).to.be.eq(toBN('1'));
-
-      const lpTokenSupply = await spreadLiquidityPool.getTotalTokenSupply();
-      expect(lpTokenSupply).to.be.eq(toBN('150'));
-    })
-  });
-
-  describe("calculate available funds", () => {
-
-  });
-
-  describe("transfer collateral from option market", () => { })
+  })
 
 });
