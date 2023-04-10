@@ -6,6 +6,7 @@ import "hardhat/console.sol";
 // libraries
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./synthetix/DecimalMath.sol";
+import "./libraries/ConvertDecimals.sol";
 
 // inherits
 
@@ -176,7 +177,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      */
     function initiateDeposit(address _beneficiary, uint _amountQuote) external nonReentrant {
         // USDC
-        // uint realQuote = amountQuote;
+        // uint realQuote = _amountQuote;
 
         // // Convert to 18 dp for LP token minting
         // amountQuote = ConvertDecimals.convertTo18(amountQuote, quoteAsset.decimals());
