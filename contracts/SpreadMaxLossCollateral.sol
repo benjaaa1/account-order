@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 // spread market contracts
 import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
@@ -13,14 +13,14 @@ import "./synthetix/SignedDecimalMath.sol";
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 /**
  * @title SpreadMaxLossCollateral
  * @author Otus
  * @dev Holds quote asset max loss funds posted by trader
  */
-contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGuard {
+contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuard {
     using SafeDecimalMath for uint;
     using SignedDecimalMath for int;
 
@@ -105,10 +105,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
 
     /// @dev sends quote collateral covering max losses
     /// @dev remove this
-    function _sendMaxLossQuoteCollateral(
-        address _recipient,
-        uint _amount
-    ) external onlySpreadOptionMarket {
+    function _sendMaxLossQuoteCollateral(address _recipient, uint _amount) external onlySpreadOptionMarket {
         // either sends to user
         // or sends to spreadliquidity pool
         if (_amount == 0) {

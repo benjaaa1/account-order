@@ -19,7 +19,8 @@ import {BasicFeeCounter} from "@lyrafinance/protocol/contracts/periphery/BasicFe
 import {OptionMarketPricer} from "@lyrafinance/protocol/contracts/OptionMarketPricer.sol";
 import {GWAVOracle} from "@lyrafinance/protocol/contracts/periphery/GWAVOracle.sol";
 
-import {SynthetixAdapter} from "@lyrafinance/protocol/contracts/SynthetixAdapter.sol";
+import {BaseExchangeAdapter} from "@lyrafinance/protocol/contracts/BaseExchangeAdapter.sol";
+import {GMXAdapter} from "@lyrafinance/protocol/contracts/GMXAdapter.sol";
 import {ILyraQuoter} from "./interfaces/ILyraQuoter.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 
@@ -127,7 +128,7 @@ contract LyraBase {
     OptionMarket public optionMarket;
     LiquidityPool internal liquidityPool;
     ShortCollateral internal shortCollateral;
-    SynthetixAdapter internal immutable exchangeAdapter;
+    GMXAdapter internal immutable exchangeAdapter;
     OptionMarketPricer internal optionPricer;
     OptionGreekCache internal greekCache;
     GWAVOracle internal gwavOracle;
@@ -159,7 +160,7 @@ contract LyraBase {
         address _lyraQuoter
     ) {
         marketKey = _marketKey;
-        exchangeAdapter = SynthetixAdapter(_exchangeAdapter); // when optimism ExchangeAdapter(_synthetix) when arbritrum ExchangeAdapter(_gmx)
+        exchangeAdapter = GMXAdapter(_exchangeAdapter); // when optimism ExchangeAdapter(_synthetix) when arbritrum ExchangeAdapter(_gmx)
         optionToken = OptionToken(_optionToken); // option token will be different
         optionMarket = OptionMarket(_optionMarket); // option market will be different
         liquidityPool = LiquidityPool(_liquidityPool); // liquidity pool will be different
@@ -178,8 +179,8 @@ contract LyraBase {
      * @notice helper to get price of asset
      * @return spotPrice
      */
-    function getSpotPriceForMarket() public view returns (uint spotPrice) {
-        spotPrice = exchangeAdapter.getSpotPriceForMarket(address(optionMarket));
+    function getSpotPriceForMarket(BaseExchangeAdapter.PriceType pricing) public view returns (uint spotPrice) {
+        spotPrice = exchangeAdapter.getSpotPriceForMarket(address(optionMarket), pricing);
     }
 
     ////////////////////
@@ -282,7 +283,7 @@ contract LyraBase {
             volatilityDecimal: vol,
             spotDecimal: spotPrice,
             strikePriceDecimal: strikePrice,
-            rateDecimal: greekCache.getGreekCacheParams().rateAndCarry
+            rateDecimal: exchangeAdapter.rateAndCarry(address(optionMarket))
         });
         (call, put) = BlackScholes.optionPrices(bsInput);
     }
@@ -294,7 +295,7 @@ contract LyraBase {
     }
 
     function getFreeLiquidity() internal view returns (uint freeLiquidity) {
-        freeLiquidity = liquidityPool.getCurrentLiquidity().freeLiquidity;
+        freeLiquidity = liquidityPool.getLiquidity().freeLiquidity;
     }
 
     function getMarketParams() internal view returns (MarketParams memory) {
@@ -302,20 +303,8 @@ contract LyraBase {
             MarketParams({
                 standardSize: optionPricer.getPricingParams().standardSize,
                 skewAdjustmentParam: optionPricer.getPricingParams().skewAdjustmentFactor,
-                rateAndCarry: greekCache.getGreekCacheParams().rateAndCarry,
+                rateAndCarry: exchangeAdapter.rateAndCarry(address(optionMarket)),
                 deltaCutOff: optionPricer.getTradeLimitParams().minDelta
-            });
-    }
-
-    // get spot price of sAsset and exchange fee percentages
-    function getExchangeParams() public view returns (ExchangeRateParams memory) {
-        // update this to only return what is used (spot price)
-        SynthetixAdapter.ExchangeParams memory params = exchangeAdapter.getExchangeParams(address(optionMarket));
-        return
-            ExchangeRateParams({
-                spotPrice: params.spotPrice,
-                quoteBaseFeeRate: params.quoteBaseFeeRate,
-                baseQuoteFeeRate: params.baseQuoteFeeRate
             });
     }
 
@@ -371,7 +360,7 @@ contract LyraBase {
                 OptionType(uint(position.optionType)),
                 strikePrice,
                 expiry,
-                exchangeAdapter.getSpotPriceForMarket(address(optionMarket)),
+                exchangeAdapter.getSpotPriceForMarket(address(optionMarket), BaseExchangeAdapter.PriceType.REFERENCE),
                 position.amount
             );
     }
@@ -388,7 +377,7 @@ contract LyraBase {
                 optionType,
                 strikePrice,
                 expiry,
-                exchangeAdapter.getSpotPriceForMarket(address(optionMarket)),
+                exchangeAdapter.getSpotPriceForMarket(address(optionMarket), BaseExchangeAdapter.PriceType.REFERENCE),
                 amount
             );
     }
@@ -404,9 +393,12 @@ contract LyraBase {
         bsInput = BlackScholes.BlackScholesInputs({
             timeToExpirySec: board.expiry - block.timestamp,
             volatilityDecimal: board.iv.multiplyDecimal(strike.skew),
-            spotDecimal: exchangeAdapter.getSpotPriceForMarket(address(optionMarket)),
+            spotDecimal: exchangeAdapter.getSpotPriceForMarket(
+                address(optionMarket),
+                BaseExchangeAdapter.PriceType.REFERENCE
+            ),
             strikePriceDecimal: strike.strikePrice,
-            rateDecimal: greekCache.getGreekCacheParams().rateAndCarry
+            rateDecimal: exchangeAdapter.rateAndCarry(address(optionMarket))
         });
     }
 
@@ -564,9 +556,7 @@ contract LyraBase {
         uint _optionType,
         uint _collatBuffer
     ) internal view returns (uint) {
-        ExchangeRateParams memory exchangeParams = getExchangeParams();
-
-        uint _spotPrice = exchangeParams.spotPrice;
+        uint _spotPrice = getSpotPriceForMarket(BaseExchangeAdapter.PriceType.REFERENCE);
         uint minCollat = getMinCollateral(OptionType(_optionType), _strikePrice, _expiry, _spotPrice, _amount);
 
         require(minCollat > 0, "min collat must be more");
@@ -586,9 +576,7 @@ contract LyraBase {
         uint _optionType,
         uint _collatBuffer
     ) internal view returns (uint) {
-        ExchangeRateParams memory exchangeParams = getExchangeParams();
-
-        uint _spotPrice = exchangeParams.spotPrice;
+        uint _spotPrice = getSpotPriceForMarket(BaseExchangeAdapter.PriceType.REFERENCE);
         uint minCollat = getMinCollateral(OptionType(_optionType), _strikePrice, _expiry, _spotPrice, _amount);
 
         require(minCollat > 0, "min collat must be more");

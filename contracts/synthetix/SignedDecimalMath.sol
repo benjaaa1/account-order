@@ -20,7 +20,7 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 /**
  * @title SignedDecimalMath
@@ -38,8 +38,7 @@ library SignedDecimalMath {
 
     /* The number representing 1.0 for higher fidelity numbers. */
     int public constant PRECISE_UNIT = int(10 ** uint(highPrecisionDecimals));
-    int private constant UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR =
-        int(10 ** uint(highPrecisionDecimals - decimals));
+    int private constant UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR = int(10 ** uint(highPrecisionDecimals - decimals));
 
     /**
      * @return Provides an interface to UNIT.

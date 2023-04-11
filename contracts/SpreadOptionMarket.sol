@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
@@ -18,7 +18,8 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+// avalon vs newport (SimpleInitializeable is SimpleInitializable)
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // interfaces
 import "./interfaces/ILyraBase.sol";
@@ -31,7 +32,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @author Otus
  * @dev Trades, Validates and Settles Spread Options Positions on Lyra.
  */
-contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
     using SafeDecimalMath for uint;
     using SignedDecimalMath for int;
 

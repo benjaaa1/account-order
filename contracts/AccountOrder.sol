@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
@@ -138,8 +138,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
         // trigger order is take profit or stop loss &&
         if (
             _trade.tradeDirection != 1 &&
-            (_trade.orderType == OrderTypes.TAKE_PROFIT ||
-                _trade.orderType == OrderTypes.STOP_LOSS) &&
+            (_trade.orderType == OrderTypes.TAKE_PROFIT || _trade.orderType == OrderTypes.STOP_LOSS) &&
             _trade.positionId == 0
         ) {
             revert InvalidOrderType();
@@ -179,12 +178,8 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @param _trade trade details
      * @return requiredCapital to be committed
      */
-    function _getRequiredCapital(
-        StrikeTrade memory _trade
-    ) internal view returns (uint requiredCapital) {
-        ILyraBase.Strike memory strike = lyraBase(_trade.market).getStrikes(
-            _toDynamic(_trade.strikeId)
-        )[0];
+    function _getRequiredCapital(StrikeTrade memory _trade) internal view returns (uint requiredCapital) {
+        ILyraBase.Strike memory strike = lyraBase(_trade.market).getStrikes(_toDynamic(_trade.strikeId))[0];
         bool isLong = _isLong(_trade.optionType);
 
         if (isLong) {
@@ -211,9 +206,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @return canExec
      * @return execPayload
      */
-    function checker(
-        uint256 _orderId
-    ) external view returns (bool canExec, bytes memory execPayload) {
+    function checker(uint256 _orderId) external view returns (bool canExec, bytes memory execPayload) {
         (canExec, ) = validOrder(_orderId);
         execPayload = abi.encodeWithSelector(this.executeOrder.selector, _orderId);
     }
@@ -273,9 +266,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @return isValid valid
      * @return totalPremium premium
      */
-    function validLimitVolOrder(
-        StrikeTrade memory _trade
-    ) internal view returns (bool isValid, uint totalPremium) {
+    function validLimitVolOrder(StrikeTrade memory _trade) internal view returns (bool isValid, uint totalPremium) {
         uint[] memory strikeId = _toDynamic(_trade.strikeId);
         uint vol = lyraBase(_trade.market).getVols(strikeId)[0];
         bool isLong = _isLong(_trade.optionType);
@@ -346,9 +337,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
         }
         StrikeTradeOrder memory order = orders[_orderId];
         StrikeTrade memory strikeTrade = order.strikeTrade;
-        ILyraBase.Strike memory strike = lyraBase(strikeTrade.market).getStrikes(
-            _toDynamic(strikeTrade.strikeId)
-        )[0];
+        ILyraBase.Strike memory strike = lyraBase(strikeTrade.market).getStrikes(_toDynamic(strikeTrade.strikeId))[0];
 
         bool isLong = _isLong(strikeTrade.optionType);
         uint positionId;
@@ -489,16 +478,11 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @param params params to open trade on lyra
      * @return result of opening trade
      */
-    function openPosition(
-        bytes32 market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResult memory) {
+    function openPosition(bytes32 market, TradeInputParameters memory params) internal returns (TradeResult memory) {
         address optionMarket = lyraBase(market).getOptionMarket();
 
         IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
-        IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(
-            convertedParams
-        );
+        IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
 
         return
             TradeResult({
@@ -518,15 +502,10 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @param params params to close trade on lyra
      * @return result of trade
      */
-    function _closePosition(
-        bytes32 market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResult memory) {
+    function _closePosition(bytes32 market, TradeInputParameters memory params) internal returns (TradeResult memory) {
         address optionMarket = lyraBase(market).getOptionMarket();
 
-        IOptionMarket.Result memory result = IOptionMarket(optionMarket).closePosition(
-            _convertParams(params)
-        );
+        IOptionMarket.Result memory result = IOptionMarket(optionMarket).closePosition(_convertParams(params));
 
         return
             TradeResult({
@@ -585,10 +564,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @param _amount  amount of quote funds
      */
     function _deposit(uint _amount) internal {
-        require(
-            quoteAsset.transferFrom(address(msg.sender), address(this), _amount),
-            "deposit from user failed"
-        );
+        require(quoteAsset.transferFrom(address(msg.sender), address(this), _amount), "deposit from user failed");
 
         emit Deposit(msg.sender, _amount);
     }
@@ -645,10 +621,7 @@ contract AccountOrder is MinimalProxyable, OpsReady, ITradeTypes {
      * @return isLong
      */
     function _isLong(uint _optionType) public pure returns (bool isLong) {
-        if (
-            OptionType(_optionType) == OptionType.LONG_CALL ||
-            OptionType(_optionType) == OptionType.LONG_PUT
-        ) {
+        if (OptionType(_optionType) == OptionType.LONG_CALL || OptionType(_optionType) == OptionType.LONG_PUT) {
             isLong = true;
         }
     }
