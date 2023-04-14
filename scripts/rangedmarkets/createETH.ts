@@ -42,8 +42,25 @@ const create = async () => {
     const event = rc.events?.find(
       (event: { event: string }) => event.event === "NewRangedMarket"
     );
-
     console.log({ event })
+
+    const rangedMarketInfo = event?.args;
+
+    const rangedMarketInstance = (await ethers.getContractAt(
+      "RangedMarket",
+      rangedMarketInfo[0]
+    ));
+
+    const slippage = toBN('.05');
+
+    const [price2, _strikeTradesOUT2] = await rangedMarketInstance.getOutPricing({
+      amount: toBN('1'),
+      slippage,
+      tradeDirection: 0,
+      forceClose: false
+    });
+
+    console.log({ price2: fromBN(price2) })
 
     // const exportAddresses = true;
 
@@ -76,6 +93,7 @@ main()
   });
 
 const buildStrikesIN = async (strikes: Array<BigNumber>, amount: BigNumber): Promise<Array<ITradeTypes.TradeInputParametersStruct>> => {
+  // strikePrices: ["2500", "2600", "2700", "2800", "2900", "3000", "3100"],
 
   const strikeTradeIN1: ITradeTypes.TradeInputParametersStruct = buildOrder(
     strikes[5],
@@ -106,18 +124,20 @@ const buildStrikesIN = async (strikes: Array<BigNumber>, amount: BigNumber): Pro
 
 const buildStrikesOUT = async (strikes: Array<BigNumber>, amount: BigNumber): Promise<Array<ITradeTypes.TradeInputParametersStruct>> => {
 
-  // SET ranged market POSITION OUT 
+
   const strikeTradeOUT1: ITradeTypes.TradeInputParametersStruct = buildOrder(
+    strikes[5],
+    0,// option type (long call 0),
+    toBN('0'),
+  );
+
+  // SET ranged market POSITION OUT 
+  const strikeTradeOUT2: ITradeTypes.TradeInputParametersStruct = buildOrder(
     strikes[1],
     1,// option type (long put 1),
     toBN('0'),
   );
 
-  const strikeTradeOUT2: ITradeTypes.TradeInputParametersStruct = buildOrder(
-    strikes[5],
-    0,// option type (long call 0),
-    toBN('0'),
-  );
 
   return [strikeTradeOUT1, strikeTradeOUT2];
 }
