@@ -507,9 +507,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
         /// @dev return difference in actual cost from max cost set
         if (maxCost > actualCost) {
-            console.log("maxCost - actualCost");
-
-            console.log(maxCost - actualCost);
             _routeExtraBackToUser(maxCost, actualCost);
         }
     }
