@@ -183,8 +183,6 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
                 TradeResult memory result = _buyResults[i];
                 position.size -= result.amount;
             }
-
-            console.log(position.size);
         } else {
             position.maxLossPosted = 0;
             position.state = PositionState.CLOSED;
