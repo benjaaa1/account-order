@@ -220,9 +220,15 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             // if short close
             // this will return any collateral owed to lp and mx
             // so basically need to get some help from close process in spreadoptionmarket
-
-            console.log("totalCost");
-            console.log(totalCost);
+            // if (pricing.tradeDirection == 1) {} else {
+            //     if (_isLong(trade.optionType)) {
+            //         trade.minTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
+            //         totalCosts += trade.maxTotalCost;
+            //     } else {
+            //         trade.maxTotalCost = totalCost - totalCost.multiplyDecimal(pricing.slippage);
+            //         totalPremium += trade.minTotalCost;
+            //     }
+            // }
 
             if (_isLong(trade.optionType)) {
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
@@ -238,7 +244,11 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             totalFees += totalFee;
         }
 
-        price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+        if (pricing.tradeDirection == 0) {
+            price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+        } else {
+            price = maxLossIn.multiplyDecimal(pricing.amount) + totalPremium - totalCosts - totalFees;
+        }
 
         return (price, tradesWithCosts);
     }
@@ -313,6 +323,11 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         TradeResult[] memory buyResults;
         // user should only set price from ui with slippage if it's enough to cover
         // then it'll succeed if not it'll fail in spread option market
+        // needs to be more validation here to check tradesWithPricing inputs
+
+        if (tradesWithPricing.length != inTrades.length) {
+            revert InvalidTrade();
+        }
 
         (positionId, sellResults, buyResults, isIncrease) = positionMarketIn.buy(
             _price,
@@ -343,6 +358,10 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     ) external nonReentrant {
         bool isIncrease;
         uint positionId;
+
+        if (tradesWithPricing.length != outTrades.length) {
+            revert InvalidTrade();
+        }
 
         TradeResult[] memory sellResults;
         TradeResult[] memory buyResults;
@@ -568,4 +587,5 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     error NotValidRangedPositionIn(TradeInputParameters[] inTrades);
 
     error NotAbleToExercise();
+    error InvalidTrade();
 }
