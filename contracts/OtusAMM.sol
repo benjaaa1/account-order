@@ -87,6 +87,8 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
 
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
+
+        emit OtusAMMInit(address(this), _spreadOptionMarket, _ethLyraBase, _btcLyraBase);
     }
 
     /**
@@ -251,6 +253,8 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         address rangedMarketTokenOut,
         address _owner
     );
+
+    event OtusAMMInit(address otus, address spreadOptionMarket, address lyraBaseETH, address lyraBaseBTC);
 
     /************************************************
      *  ERRORS
