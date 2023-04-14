@@ -8,7 +8,7 @@ import {
   lyraEvm,
 } from "@lyrafinance/protocol";
 import { fromBN, MAX_UINT, toBN, ZERO_ADDRESS } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
-import { DEFAULT_PRICING_PARAMS } from "@lyrafinance/protocol/dist/test/utils/defaultParams";
+import { DEFAULT_OPTION_MARKET_PARAMS, DEFAULT_PRICING_PARAMS } from "@lyrafinance/protocol/dist/test/utils/defaultParams";
 import { TestSystemContractsType } from "@lyrafinance/protocol/dist/test/utils/deployTestSystem";
 import { PricingParametersStruct } from "@lyrafinance/protocol/dist/typechain-types/OptionMarketViewer";
 import {
@@ -63,7 +63,7 @@ const boardParameter = {
   expiresIn: lyraConstants.DAY_SEC * 7,
   baseIV: "0.7",
   strikePrices: ["2500", "2600", "2700", "2800", "2900", "3000", "3100"],
-  skews: ["1.1", "1.1", "1.1", "1", "1.1", "1.1", "1.1"],
+  skews: [".9", "1", "1", "1", "1", "1", "1.1"],
 };
 
 const spotPrice = toBN("2800");
@@ -78,13 +78,11 @@ describe("ranged market", async () => {
   before("deploy lyra test", async () => {
     lyraGlobal = getGlobalDeploys("local");
 
-    const pricingParams: PricingParametersStruct = {
-      ...DEFAULT_PRICING_PARAMS,
-      standardSize: toBN("10"),
-      spotPriceFeeCoefficient: toBN("0.001"),
-    };
-
-    lyraTestSystem = await TestSystem.deploy(lyra, false, false, { pricingParams });
+    lyraTestSystem = await TestSystem.deploy(lyra, false, false, {
+      mockSNX: true,
+      compileSNX: false,
+      optionMarketParams: { ...DEFAULT_OPTION_MARKET_PARAMS, feePortionReserved: toBN('0.05') },
+    });
 
     await TestSystem.seed(lyra, lyraTestSystem, {
       initialBoard: boardParameter,
@@ -209,7 +207,7 @@ describe("ranged market", async () => {
     await sUSD.connect(trader2).approve(spreadOptionMarket.address, toBN('200'));
   })
 
-  describe("deposit into lp and attempt to trade in ranged maret token", () => {
+  describe.only("deposit into lp and attempt to trade in ranged maret token", () => {
 
     let startLPBalance = 0;
     let boardId = toBN("0");
@@ -246,7 +244,7 @@ describe("ranged market", async () => {
 
     });
 
-    it("should be able to INIT and SET a simple range market 1 iron butterfly (ranged market in)", async () => {
+    it.only("should be able to INIT and SET a simple range market 1 iron butterfly (ranged market in)", async () => {
 
       // strikePrices: ["2700", ""2800", "2900", "3000", "3100", "3200", "3300"],
       // SET ranged market POSITION IN => iron condor or iron butterfly
@@ -259,7 +257,6 @@ describe("ranged market", async () => {
 
 
       const lyraBase = await otusAMM.lyraBase(MARKET_KEY_ETH);
-      console.log({ lyraBase })
 
       const event = rc.events?.find(
         (event: { event: string }) => event.event === "NewRangedMarket"
@@ -267,6 +264,59 @@ describe("ranged market", async () => {
 
       rangedMarketInfo = event?.args;
 
+      rangedMarketInstance = (await ethers.getContractAt(
+        "RangedMarket",
+        rangedMarketInfo[0]
+      )) as RangedMarket;
+
+      // pricing
+      const amount = toBN('1');
+      const slippage = toBN('.05');
+      // get in pricing buy - 
+      const [price, _strikeTradesIN] = await rangedMarketInstance.getInPricing({
+        amount,
+        slippage,
+        tradeDirection: 0,
+        forceClose: false
+      });
+
+      console.log({ price: fromBN(price) })
+
+      // // get in pricing sell 
+      console.log({
+        premium: fromBN('69027297380006241855'),
+        premium1: fromBN('10838059583964023064'),
+        premium02: fromBN('61754928978171323474'),
+        premium12: fromBN('3871651535724033022')
+      })
+      const [price1, _strikeTradesIN1] = await rangedMarketInstance.getInPricing({
+        amount,
+        slippage,
+        tradeDirection: 1,
+        forceClose: false
+      });
+
+      console.log({ price1: fromBN(price1) })
+
+      // get out pricing buy
+      const [price2, _strikeTradesOUT2] = await rangedMarketInstance.getOutPricing({
+        amount: toBN('1'),
+        slippage,
+        tradeDirection: 0,
+        forceClose: false
+      });
+
+      console.log({ price2: fromBN(price2) })
+      // get out pricing sell 
+      // get out pricing buy
+      const [price3, _strikeTradesOUT3] = await rangedMarketInstance.getOutPricing({
+        amount: toBN('1'),
+        slippage,
+        tradeDirection: 1,
+        forceClose: false
+      });
+
+      console.log({ price3: fromBN(price3) })
     });
 
     it("trader 1 should be able to buy a minimum set amount", async () => {
@@ -288,8 +338,6 @@ describe("ranged market", async () => {
         tradeDirection: 0,
         forceClose: false
       });
-
-      console.log({ price, rangedMarketInfo })
 
       // approve in market
       await sUSD.connect(trader1).approve(rangedMarketInfo[3], price);
@@ -341,18 +389,8 @@ describe("ranged market", async () => {
         forceClose: false
       });
 
-      console.log({ price1: fromBN(price1), price1Open: fromBN(price1Open) })
-
       // commented out to find the last max loss collateral balance origin
       await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount1, price1, strikeTradesINSells1);
-
-
-      const lpBalanceAfterSell = parseInt(fromBN(await sUSD.balanceOf(spreadLiquidityPool.address)));
-      console.log({
-        lpBalanceAfterSell,
-        startLPBalance,
-        leftOverForTrader: fromBN('2488424410057030233')
-      })
 
     })
 
@@ -434,12 +472,6 @@ describe("ranged market", async () => {
       const trader2BalanceAfterSettelement = parseInt(fromBN(await sUSD.balanceOf(trader2.address)));
 
       const maxLossCollateralAfter = parseInt(fromBN(await sUSD.balanceOf(spreadMaxLossCollateral.address)));
-
-      console.log({
-        lpBalanceAfterSettlement,
-        startLPBalance,
-        maxLossCollateralAfter
-      });
 
       expect(maxLossCollateralAfter).to.be.eq(0);
 
@@ -563,12 +595,6 @@ describe("ranged market", async () => {
 
 
       expect(maxLossCollateralBefore).to.be.eq(0);
-
-      console.log({
-        maxLossCollateral: fromBN('354152656677472769'),
-        maxLossCollateralAfter: fromBN('3718602895113464086'),
-        onbuy: fromBN('2691331751904892234'),
-      })
 
       const trader1BalanceBeforeBuy = parseInt(fromBN(await sUSD.balanceOf(trader1.address)));
 
@@ -759,8 +785,9 @@ const buildStrikesIN = async (strikes: Array<BigNumber>, amount: BigNumber): Pro
 const buildStrikesOUT = async (strikes: Array<BigNumber>, amount: BigNumber): Promise<Array<ITradeTypes.TradeInputParametersStruct>> => {
 
   // SET ranged market POSITION OUT 
+  // SET ranged market POSITION OUT 
   const strikeTradeOUT1: ITradeTypes.TradeInputParametersStruct = buildOrder(
-    strikes[0],
+    strikes[1],
     1,// option type (long put 1),
     toBN('0'),
   );
@@ -770,6 +797,7 @@ const buildStrikesOUT = async (strikes: Array<BigNumber>, amount: BigNumber): Pr
     0,// option type (long call 0),
     toBN('0'),
   );
+
 
   return [strikeTradeOUT1, strikeTradeOUT2];
 }
