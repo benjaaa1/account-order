@@ -8,7 +8,8 @@ deployments
 # Hardhat files
 cache
 artifacts
-
+yarn.lock
+yarn-error.log
 .lyra
 contracts/hardhat-dependency-compiler
 sliter-results.json

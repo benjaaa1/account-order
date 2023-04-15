@@ -177,10 +177,13 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      */
     function initiateDeposit(address _beneficiary, uint _amountQuote) external nonReentrant {
         // USDC
-        // uint realQuote = _amountQuote;
+        uint realQuote = _amountQuote;
+        console.log("realQuote");
+        console.log(realQuote);
 
         // // Convert to 18 dp for LP token minting
-        // amountQuote = ConvertDecimals.convertTo18(amountQuote, quoteAsset.decimals());
+        _amountQuote = ConvertDecimals.convertTo18(_amountQuote, quoteAsset.decimals());
+        console.log(_amountQuote);
 
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
@@ -197,7 +200,9 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         _mint(_beneficiary, amountTokens);
         emit DepositProcessed(msg.sender, _beneficiary, 0, _amountQuote, tokenPrice, amountTokens, block.timestamp);
 
-        if (!quoteAsset.transferFrom(msg.sender, address(this), _amountQuote)) {
+        console.log("depositor bal");
+        console.log(quoteAsset.balanceOf(msg.sender));
+        if (!quoteAsset.transferFrom(msg.sender, address(this), realQuote)) {
             revert QuoteTransferFailed(address(this), msg.sender, address(this), _amountQuote);
         }
     }
@@ -216,18 +221,29 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
         }
+        console.log("_amountLiquidityToken");
+        console.log(_amountLiquidityToken);
 
         Liquidity memory liquidity = getLiquidity();
         uint tokenPrice = _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
 
         uint withdrawalValue = _amountLiquidityToken.multiplyDecimal(tokenPrice);
-
+        console.log("min withdraw");
+        console.log(withdrawalValue);
         if (withdrawalValue < lpParams.minDepositWithdraw && _amountLiquidityToken < lpParams.minDepositWithdraw) {
+            console.log("min withdraw");
             revert MinimumWithdrawNotMet(address(this), withdrawalValue, lpParams.minDepositWithdraw);
         }
         // if no spreadOptionMarket trades are using collateral
         // if enough free collateral to withdraw
         if (lockedLiquidity == 0) {
+            console.log("withdrawalValue 1");
+            console.log(withdrawalValue);
+
+            withdrawalValue = ConvertDecimals.convertFrom18(withdrawalValue, quoteAsset.decimals());
+            console.log("withdrawalValue 2");
+            console.log(withdrawalValue);
+
             if (!quoteAsset.transfer(_beneficiary, withdrawalValue)) {
                 revert QuoteTransferFailed(address(this), address(this), _beneficiary, withdrawalValue);
             }
@@ -397,9 +413,15 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     function transferShortCollateral(uint _amount) public onlySpreadOptionMarket {
         // check free liquidity
         // @dev add to locked collateral
+        console.log("transfer short collateral");
+        console.log(_amount);
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
+        console.log(_amount);
+
         _lockLiquidity(_amount);
         // check active deposits
         // add to traded
+
         if (_amount > 0) {
             if (!quoteAsset.transfer(address(spreadOptionMarket), _amount)) {
                 revert CollateralTransferToMarketFail(_amount);
@@ -515,9 +537,11 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     function _getTotalPoolValueQuote() internal view returns (uint) {
-        int totalAssetValue = SafeCast.toInt256(quoteAsset.balanceOf(address(this)) + lockedLiquidity);
+        // int totalAssetValue = SafeCast.toInt256(quoteAsset.balanceOf(address(this)) + lockedLiquidity);
 
-        return uint(totalAssetValue);
+        uint totalAssetValue = ConvertDecimals.convertTo18(quoteAsset.balanceOf(address(this)), quoteAsset.decimals()) +
+            lockedLiquidity;
+        return totalAssetValue;
     }
 
     /// @dev Get total number of oustanding LiquidityPool Token

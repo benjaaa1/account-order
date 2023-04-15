@@ -7,7 +7,7 @@ import {
   TestSystem,
   getGlobalDeploys,
 } from "@lyrafinance/protocol";
-import { DAY_SEC, fromBN, MONTH_SEC, toBN, YEAR_SEC, ZERO_ADDRESS } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
+import { DAY_SEC, fromBN, MONTH_SEC, YEAR_SEC, ZERO_ADDRESS, toBN } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 import { DEFAULT_PRICING_PARAMS } from "@lyrafinance/protocol/dist/test/utils/defaultParams";
 import { TestSystemContractsType } from "@lyrafinance/protocol/dist/test/utils/deployTestSystem";
 import { PricingParametersStruct } from "@lyrafinance/protocol/dist/typechain-types/OptionMarketViewer";
@@ -17,13 +17,16 @@ import {
   SpreadLiquidityPool,
   SpreadOptionMarket,
   SpreadOptionToken,
-  SpreadMaxLossCollateral
+  SpreadMaxLossCollateral,
+  MockERC20SetDecimals
 } from "../../typechain-types";
 import { LyraGlobal } from "@lyrafinance/protocol/dist/test/utils/package/parseFiles";
 import { impersonateAccount, time } from "@nomicfoundation/hardhat-network-helpers";
 import { days } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time/duration";
+// import { TestERC20SetDecimals } from "@lyrafinance/protocol/dist/typechain-types";
+import { BigNumber, ContractFactory } from "ethers";
 
-let sUSD: MockERC20;
+let usdc: MockERC20;
 let lyraTestSystem: TestSystemContractsType;
 
 // spread market contracts
@@ -39,18 +42,9 @@ let depositor2: SignerWithAddress;
 let depositor3: SignerWithAddress;
 let trader1: SignerWithAddress;
 
-let lyraGlobal: LyraGlobal;
-const boardParameter = {
-  expiresIn: lyraConstants.DAY_SEC * 7,
-  baseIV: "0.8",
-  strikePrices: ["2500", "2600", "2700", "2800", "2900", "3000", "3100"],
-  skews: ["1.3", "1.2", "1.1", "1", "1.1", "1.3", "1.3"],
-};
-
-const spotPrice = toBN("3000");
-
-// 1.5m lyra pool
-const initialPoolDeposit = toBN("1500000");
+const _toBN = (amount: string) => {
+  return toBN(amount, 6);
+}
 
 describe("liquidity pool testing", async () => {
 
@@ -58,24 +52,15 @@ describe("liquidity pool testing", async () => {
     [deployer, guardian, depositor1, depositor2, depositor3, trader1] = await ethers.getSigners();
   });
 
-  before("deploy lyra test", async () => {
-    lyraGlobal = getGlobalDeploys("local");
+  before("deploy usdc test", async () => {
 
-    const pricingParams: PricingParametersStruct = {
-      ...DEFAULT_PRICING_PARAMS,
-      standardSize: toBN("10"),
-      spotPriceFeeCoefficient: toBN("0.001"),
-    };
-
-    lyraTestSystem = await TestSystem.deploy(deployer, false, false, { pricingParams });
-
-    await TestSystem.seed(deployer, lyraTestSystem, {
-      initialBoard: boardParameter,
-      initialBasePrice: spotPrice,
-      initialPoolDeposit: initialPoolDeposit,
-    });
-
-    sUSD = lyraTestSystem.snx.quoteAsset as MockERC20;
+    usdc = (await (await ethers.getContractFactory("MockERC20SetDecimals") as ContractFactory)
+      .connect(deployer)
+      .deploy(
+        'Circle USD',
+        'USDC',
+        6
+      )) as MockERC20SetDecimals;
 
   });
 
@@ -102,7 +87,7 @@ describe("liquidity pool testing", async () => {
     spreadMaxLossCollateral = (await SpreadMaxLossCollateral.connect(deployer).deploy()) as SpreadMaxLossCollateral;
 
     await spreadOptionMarket.connect(deployer).initialize(
-      lyraTestSystem.snx.quoteAsset.address,
+      usdc.address,
       ZERO_ADDRESS,
       ZERO_ADDRESS,
       spreadMaxLossCollateral.address,
@@ -112,7 +97,7 @@ describe("liquidity pool testing", async () => {
 
     await spreadLiquidityPool.connect(deployer).initialize(
       spreadOptionMarket.address,
-      lyraTestSystem.snx.quoteAsset.address
+      usdc.address
     );
 
     await spreadOptionToken.connect(deployer).initialize(
@@ -122,7 +107,7 @@ describe("liquidity pool testing", async () => {
     );
 
     await spreadMaxLossCollateral.connect(deployer).initialize(
-      lyraTestSystem.snx.quoteAsset.address,
+      usdc.address,
       spreadOptionMarket.address,
       spreadLiquidityPool.address
     );
@@ -130,35 +115,37 @@ describe("liquidity pool testing", async () => {
   });
 
   before("mint susd for depositors", async () => {
-    await sUSD.mint(depositor1.address, toBN("10000"));
-    await sUSD.mint(depositor2.address, toBN("10000"));
-    await sUSD.mint(depositor3.address, toBN("10000"));
-    await sUSD.mint(spreadOptionMarket.address, toBN("10000"));
+    await usdc.mint(depositor1.address, _toBN("10000"));
+    await usdc.mint(depositor2.address, _toBN("10000"));
+    await usdc.mint(depositor3.address, _toBN("10000"));
+    await usdc.mint(spreadOptionMarket.address, _toBN("10000"));
   });
 
   describe("deposit to liquidity pool and get lp tokens", () => {
 
     it("deposits immediately for first depositor", async () => {
-      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('5000'));
-      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('5000'));
+      await usdc.connect(depositor1).approve(spreadLiquidityPool.address, _toBN('5000'));
+      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, _toBN('5000'));
 
-      expect(await sUSD.balanceOf(spreadLiquidityPool.address)).to.be.eq(toBN('5000'));
+      expect(await usdc.balanceOf(spreadLiquidityPool.address)).to.be.eq(_toBN('5000'));
+      // lp token is 18 decimals
       expect(await spreadLiquidityPool.balanceOf(depositor1.address)).to.be.eq(toBN('5000'));
 
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('5000'));
-      expect(await sUSD.balanceOf(depositor2.address)).to.be.eq(toBN('10000'));
+      expect(await usdc.balanceOf(depositor1.address)).to.be.eq(_toBN('5000'));
+      expect(await usdc.balanceOf(depositor2.address)).to.be.eq(_toBN('10000'));
     });
 
     it("only depositor should be able to withdraw immediately", async () => {
 
       await expect(
-        spreadLiquidityPool.connect(depositor2).initiateWithdraw(depositor1.address, toBN('5000'))).to.be.revertedWith(
+        spreadLiquidityPool.connect(depositor2).initiateWithdraw(depositor1.address, _toBN('5000'))).to.be.revertedWith(
           'ERC20: burn amount exceeds balance',
         );
 
+      // lp token withdraw
       await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, toBN('5000'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('10000'));
-      expect(await spreadLiquidityPool.balanceOf(depositor1.address)).to.be.eq(toBN('0'));
+      expect(await usdc.balanceOf(depositor1.address)).to.be.eq(_toBN('10000'));
+      expect(await spreadLiquidityPool.balanceOf(depositor1.address)).to.be.eq(_toBN('0'));
 
     })
 
@@ -173,9 +160,9 @@ describe("liquidity pool testing", async () => {
 
     it("token price of 1 with only deposits", async () => {
 
-      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('1000'));
-      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('1000'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('9000'));
+      await usdc.connect(depositor1).approve(spreadLiquidityPool.address, _toBN('1000'));
+      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, _toBN('1000'));
+      expect(await usdc.balanceOf(depositor1.address)).to.be.eq(_toBN('9000'));
 
       const tokenPrice = await spreadLiquidityPool.getTokenPrice();
       expect(tokenPrice).to.be.eq(toBN('1'));
@@ -183,8 +170,9 @@ describe("liquidity pool testing", async () => {
       const lpTokenSupply = await spreadLiquidityPool.getTotalTokenSupply();
       expect(lpTokenSupply).to.be.eq(toBN('1000'));
 
+      // lp token is 18 decimals
       await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, toBN('1000'));
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('10000'));
+      expect(await usdc.balanceOf(depositor1.address)).to.be.eq(_toBN('10000'));
     })
 
   });
@@ -192,19 +180,19 @@ describe("liquidity pool testing", async () => {
   describe("set liquidity pools and circuit breakers", () => {
     it("should be able to set valid parameters", async () => {
       await spreadLiquidityPool.connect(deployer).setLiquidityPoolParameters({
-        minDepositWithdraw: toBN('10'),
-        withdrawalDelay: toBN('0'),
-        withdrawalFee: toBN('0'),
-        guardianDelay: toBN('0'),
-        cap: toBN('0'),
-        fee: toBN('0.10'), // 10 % yearly
+        minDepositWithdraw: _toBN('10'),
+        withdrawalDelay: _toBN('0'),
+        withdrawalFee: _toBN('0'),
+        guardianDelay: _toBN('0'),
+        cap: _toBN('0'),
+        fee: _toBN('0.10'), // 10 % yearly
         guardianMultisig: guardian.address
       });
     })
 
     it("should be able to set circuit breaker parameters", async () => {
       await spreadLiquidityPool.connect(deployer).setCircuiteBreakerParemeters({
-        liquidityCBThreshold: toBN('.03'),
+        liquidityCBThreshold: _toBN('.03'),
         liquidityCBTimeout: DAY_SEC * 3
       });
     })
@@ -214,7 +202,7 @@ describe("liquidity pool testing", async () => {
     it("should revert on attempt to transfer collateral", async () => {
 
       await expect(
-        spreadLiquidityPool.connect(deployer).transferShortCollateral(toBN('150'))).to.be.revertedWith(
+        spreadLiquidityPool.connect(deployer).transferShortCollateral(_toBN('150'))).to.be.revertedWith(
           'OnlySpreadOptionMarket',
         );
 
@@ -223,7 +211,7 @@ describe("liquidity pool testing", async () => {
     it("should revert on attempt to free locked liquidity", async () => {
 
       await expect(
-        spreadLiquidityPool.connect(deployer).freeLockedLiquidity(toBN('150'))).to.be.revertedWith(
+        spreadLiquidityPool.connect(deployer).freeLockedLiquidity(_toBN('150'))).to.be.revertedWith(
           'OnlySpreadOptionMarket',
         );
 
@@ -258,7 +246,7 @@ describe("liquidity pool testing", async () => {
     it("calculate fees for 1 year", async () => {
       const _time = await time.latest();
       const fee = await spreadLiquidityPool.calculateCollateralFee(toBN('1000'), (YEAR_SEC) + _time);
-      expect(fee).to.be.eq(toBN('100')); // 1000 * .1
+      expect(fee).to.be.eq(_toBN('100')); // 1000 * .1
     });
   });
 
@@ -266,20 +254,20 @@ describe("liquidity pool testing", async () => {
     it("token price should be constant after locking liquidity w/o fees", async () => {
 
       // deposit more funds 
-      await sUSD.connect(depositor1).approve(spreadLiquidityPool.address, toBN('5000'));
-      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, toBN('5000'));
+      await usdc.connect(depositor1).approve(spreadLiquidityPool.address, _toBN('5000'));
+      await spreadLiquidityPool.connect(depositor1).initiateDeposit(depositor1.address, _toBN('5000'));
 
       // check pool balance 
-      expect(await sUSD.balanceOf(spreadLiquidityPool.address)).to.be.eq(toBN('5000'));
+      expect(await usdc.balanceOf(spreadLiquidityPool.address)).to.be.eq(_toBN('5000'));
 
       // token price is constant w/o option market txs
       const tokenPrice = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPrice).to.be.eq(toBN('1'))
+      expect(tokenPrice).to.be.eq(_toBN('1'))
 
       // option market tx - borrow collateral from option market
       await deployer.sendTransaction({
         to: spreadOptionMarket.address,
-        value: toBN('1'), // Sends exactly 1.0 ether
+        value: _toBN('1'), // Sends exactly 1.0 ether
       });
 
       await hre.network.provider.request({
@@ -289,15 +277,15 @@ describe("liquidity pool testing", async () => {
 
       const market = await ethers.getSigner(spreadOptionMarket.address)
 
-      await spreadLiquidityPool.connect(market).transferShortCollateral(toBN('1000'));
+      await spreadLiquidityPool.connect(market).transferShortCollateral(_toBN('1000'));
 
       // locked liquidity needs to be equal to transferred collateral
       const lockedLiquidity = await spreadLiquidityPool.lockedLiquidity();
-      expect(lockedLiquidity).to.be.eq(toBN('1000'));
+      expect(lockedLiquidity).to.be.eq(_toBN('1000'));
 
       // token price should be constant (no fees paid);  
       const tokenPriceAfter = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPriceAfter).to.be.eq(toBN('1'))
+      expect(tokenPriceAfter).to.be.eq(_toBN('1'))
 
     })
   })
@@ -306,16 +294,16 @@ describe("liquidity pool testing", async () => {
 
     it("token price should increase", async () => {
       const tokenPrice = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPrice).to.be.eq(toBN('1'));
+      expect(tokenPrice).to.be.eq(_toBN('1'));
 
       // return funds with fees
       // trader1 pays fee
       const _time = await time.latest();
-      const fee = await spreadLiquidityPool.calculateCollateralFee(toBN('1000'), (YEAR_SEC) + _time);
+      const fee = await spreadLiquidityPool.calculateCollateralFee(_toBN('1000'), (YEAR_SEC) + _time);
 
       await deployer.sendTransaction({
         to: spreadOptionMarket.address,
-        value: toBN('1'), // Sends exactly 1.0 ether
+        value: _toBN('1'), // Sends exactly 1.0 ether
       });
 
       await hre.network.provider.request({
@@ -324,10 +312,10 @@ describe("liquidity pool testing", async () => {
       });
 
       const market = await ethers.getSigner(spreadOptionMarket.address)
-      await sUSD.connect(market).transfer(spreadLiquidityPool.address, fee);
+      await usdc.connect(market).transfer(spreadLiquidityPool.address, fee);
 
       const tokenPriceAfterFee = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPriceAfterFee).to.be.gt(toBN('1'));
+      expect(tokenPriceAfterFee).to.be.gt(_toBN('1'));
 
     });
 
@@ -338,14 +326,14 @@ describe("liquidity pool testing", async () => {
     it("initiate withdrawal should add withdraw to queue", async () => {
 
       const lockedLiquidityBefore = await spreadLiquidityPool.lockedLiquidity();
-      expect(lockedLiquidityBefore).to.be.eq(toBN('1000'));
+      expect(lockedLiquidityBefore).to.be.eq(_toBN('1000'));
 
-      expect(await sUSD.balanceOf(depositor1.address)).to.be.eq(toBN('5000'));
+      expect(await usdc.balanceOf(depositor1.address)).to.be.eq(_toBN('5000'));
 
-      await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, toBN('1000'));
+      await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, _toBN('1000'));
 
       const lockedLiquidity = await spreadLiquidityPool.lockedLiquidity();
-      expect(lockedLiquidity).to.be.eq(toBN('1000'));
+      expect(lockedLiquidity).to.be.eq(_toBN('1000'));
 
     })
 
@@ -363,11 +351,11 @@ describe("liquidity pool testing", async () => {
 
     it("token price remains constant after adding deposits but no fees", async () => {
       // deposit more funds depositor2
-      const depositor2USDBalanceBefore = await sUSD.balanceOf(depositor2.address);
-      expect(depositor2USDBalanceBefore).to.be.eq(toBN('10000'));
+      const depositor2USDBalanceBefore = await usdc.balanceOf(depositor2.address);
+      expect(depositor2USDBalanceBefore).to.be.eq(_toBN('10000'));
 
-      await sUSD.connect(depositor2).approve(spreadLiquidityPool.address, toBN('5000'));
-      await spreadLiquidityPool.connect(depositor2).initiateDeposit(depositor2.address, toBN('5000'));
+      await usdc.connect(depositor2).approve(spreadLiquidityPool.address, _toBN('5000'));
+      await spreadLiquidityPool.connect(depositor2).initiateDeposit(depositor2.address, _toBN('5000'));
 
       const tokenPrice = await spreadLiquidityPool.getTokenPrice();
 
@@ -386,48 +374,48 @@ describe("liquidity pool testing", async () => {
       const lockedLiquidity = await spreadLiquidityPool.lockedLiquidity();
 
       // to mock freeing locked liquidity make sure to send quote asset to pool
-      await sUSD.connect(market).transfer(spreadLiquidityPool.address, lockedLiquidity);
+      await usdc.connect(market).transfer(spreadLiquidityPool.address, lockedLiquidity);
       await spreadLiquidityPool.connect(market).freeLockedLiquidity(lockedLiquidity);
 
       // initiate instant withdrawal will be same as original depositor 2 deposit
-      const depositor2USDBalance = await sUSD.balanceOf(depositor2.address);
-      expect(depositor2USDBalance).to.be.eq(toBN('5000'));
+      const depositor2USDBalance = await usdc.balanceOf(depositor2.address);
+      expect(depositor2USDBalance).to.be.eq(_toBN('5000'));
 
       const lpTokenBalanceDepositor2 = await spreadLiquidityPool.balanceOf(depositor2.address);
       await spreadLiquidityPool.connect(depositor2).initiateWithdraw(depositor2.address, lpTokenBalanceDepositor2);
 
-      const depositor2USDBalanceAfterWithdrawal = await sUSD.balanceOf(depositor2.address);
+      const depositor2USDBalanceAfterWithdrawal = await usdc.balanceOf(depositor2.address);
       const lpTokenBalanceDepositorAfterWithdraw2 = await spreadLiquidityPool.balanceOf(depositor2.address);
 
-      expect(lpTokenBalanceDepositorAfterWithdraw2).to.be.eq(toBN('0'));
+      expect(lpTokenBalanceDepositorAfterWithdraw2).to.be.eq(_toBN('0'));
       // expect(depositor2USDBalanceAfterWithdrawal).to.be.eq(depositor2USDBalanceBefore);
     })
 
     it("processing withdrawal should collect original deposit + all fees - depositor 1", async () => {
 
-      const depositor1USDBalanceBefore = await sUSD.balanceOf(depositor1.address);
-      expect(depositor1USDBalanceBefore).to.be.eq(toBN('5000'));
+      const depositor1USDBalanceBefore = await usdc.balanceOf(depositor1.address);
+      expect(depositor1USDBalanceBefore).to.be.eq(_toBN('5000'));
 
       const queuedWithdrawalHead = await spreadLiquidityPool.queuedWithdrawalHead();
       const queuedWithdrawal = await spreadLiquidityPool.queuedWithdrawals(queuedWithdrawalHead);
 
       // process withdrawal 
       await spreadLiquidityPool.processWithdrawalQueue(queuedWithdrawalHead);
-      const depositor1USDBalanceAfter = await sUSD.balanceOf(depositor1.address);
+      const depositor1USDBalanceAfter = await usdc.balanceOf(depositor1.address);
 
       const totalExpectWithdrawalAmount = parseFloat(fromBN(queuedWithdrawal.amountTokens)) * parseFloat(fromBN(queuedWithdrawal.tokenPriceAtWithdrawal));
       const expectedTotalBalance = totalExpectWithdrawalAmount + parseInt(fromBN(depositor1USDBalanceBefore));
 
-      expect(depositor1USDBalanceAfter).to.be.eq(toBN(expectedTotalBalance.toString()));
+      expect(depositor1USDBalanceAfter).to.be.eq(_toBN(expectedTotalBalance.toString()));
 
       const lpTokenBalanceDepositor1 = await spreadLiquidityPool.balanceOf(depositor1.address);
 
       // depositor 1 should have 100 usd profit from fees after withdrawal
       // should withdraw immediately
       await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, lpTokenBalanceDepositor1);
-      const depositor1USDBalanceAfterFinal = await sUSD.balanceOf(depositor1.address);
+      const depositor1USDBalanceAfterFinal = await usdc.balanceOf(depositor1.address);
 
-      expect(depositor1USDBalanceAfterFinal).to.be.eq(toBN('10100'))
+      expect(depositor1USDBalanceAfterFinal).to.be.eq(_toBN('10100'))
 
     });
   })

@@ -316,6 +316,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
                 partialSum += shortTrades[i].amount;
             }
 
+            // collateral owed on sell
             (uint collateralToRemove, uint setCollateralTo) = getRequiredCollateralOnClose(_market, shortTrades[i]);
 
             IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
@@ -892,6 +893,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
 
     function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal {
         uint fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
+        // convert to 6 decimals
         if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
             revert TransferFundsFromTraderFailed(msg.sender, fee);
         }
