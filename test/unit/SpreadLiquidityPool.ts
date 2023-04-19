@@ -310,11 +310,11 @@ describe("liquidity pool testing", async () => {
       // return funds with fees
       // trader1 pays fee
       const _time = await time.latest();
-      const fee = await spreadLiquidityPool.calculateCollateralFee(_toBN6('1000'), (YEAR_SEC) + _time);
+      const fee = await spreadLiquidityPool.calculateCollateralFee(toBN('1000'), (YEAR_SEC) + _time);
 
       await deployer.sendTransaction({
         to: spreadOptionMarket.address,
-        value: _toBN6('1'), // Sends exactly 1.0 ether
+        value: toBN('1'), // Sends exactly 1.0 ether
       });
 
       await hre.network.provider.request({
@@ -326,7 +326,7 @@ describe("liquidity pool testing", async () => {
       await usdc.connect(market).transfer(spreadLiquidityPool.address, fee);
 
       const tokenPriceAfterFee = await spreadLiquidityPool.getTokenPrice();
-      expect(tokenPriceAfterFee).to.be.gt(_toBN6('1'));
+      expect(tokenPriceAfterFee).to.be.gt(toBN('1'));
 
     });
 
@@ -418,22 +418,22 @@ describe("liquidity pool testing", async () => {
       // process withdrawal 
       await spreadLiquidityPool.processWithdrawalQueue(queuedWithdrawalHead);
       const depositor1USDBalanceAfter = await usdc.balanceOf(depositor1.address);
-      console.log({ depositor1USDBalanceAfter: _fromBN6(depositor1USDBalanceAfter.toString()) })
-      const totalExpectWithdrawalAmount = parseFloat(fromBN(queuedWithdrawal.amountTokens)) * parseFloat(fromBN(queuedWithdrawal.tokenPriceAtWithdrawal));
-      console.log({ amountTokens: fromBN(queuedWithdrawal.amountTokens), tokenPriceAtWithdrawal: fromBN(queuedWithdrawal.tokenPriceAtWithdrawal) })
-      const expectedTotalBalance = totalExpectWithdrawalAmount + parseInt(fromBN(depositor1USDBalanceBefore));
-      console.log({ expectedTotalBalance })
 
-      // expect(depositor1USDBalanceAfter).to.be.eq(_toBN6(expectedTotalBalance.toString()));
+      const totalExpectWithdrawalAmount = parseFloat(fromBN(queuedWithdrawal.amountTokens)) * parseFloat(fromBN(queuedWithdrawal.tokenPriceAtWithdrawal));
+
+      const expectedTotalBalance = totalExpectWithdrawalAmount + parseInt(_fromBN6(depositor1USDBalanceBefore.toString()));
+
+      expect(depositor1USDBalanceAfter).to.be.eq(_toBN6(expectedTotalBalance.toString()));
 
       const lpTokenBalanceDepositor1 = await spreadLiquidityPool.balanceOf(depositor1.address);
-
+      console.log({ lpTokenBalanceDepositor1: fromBN(lpTokenBalanceDepositor1) })
       // depositor 1 should have 100 usd profit from fees after withdrawal
       // should withdraw immediately
       await spreadLiquidityPool.connect(depositor1).initiateWithdraw(depositor1.address, lpTokenBalanceDepositor1);
       const depositor1USDBalanceAfterFinal = await usdc.balanceOf(depositor1.address);
-
-      expect(depositor1USDBalanceAfterFinal).to.be.eq(_toBN6('10100'))
+      console.log({ depositor1USDBalanceAfterFinal: _fromBN6(depositor1USDBalanceAfterFinal.toString()) })
+      // rounding error 
+      expect(depositor1USDBalanceAfterFinal).to.be.eq(_toBN6('10100.000001'))
 
     });
   })

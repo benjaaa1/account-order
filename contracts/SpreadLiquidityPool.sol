@@ -558,6 +558,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         uint durationFee = lpParams.fee.multiplyDecimal(durationOfYearPct);
 
         fee = _amount.multiplyDecimal(durationFee);
+        console.log("fee");
+        console.log(fee);
     }
 
     /************************************************
