@@ -14,6 +14,7 @@ import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 
 // libraries
 import "../synthetix/DecimalMath.sol";
+import "../libraries/ConvertDecimals.sol";
 
 // spread option market
 import {SpreadOptionMarket} from "../SpreadOptionMarket.sol";
@@ -150,6 +151,17 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
     function sendFundsToTrader(address _trader, uint _amount) public onlyRangedMarket {
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
+        }
+    }
+
+    /************************************************
+     *  MISC
+     ***********************************************/
+    /// @dev Transfers the amount from 18dp to the quoteAsset's decimals ensuring any precision loss is rounded up
+    function _transferFromQuote(address from, address to, uint amount) internal {
+        amount = ConvertDecimals.convertFrom18AndRoundUp(amount, quoteAsset.decimals());
+        if (!quoteAsset.transferFrom(from, to, amount)) {
+            // revert QuoteTransferFailed(address(this), from, to, amount);
         }
     }
 
