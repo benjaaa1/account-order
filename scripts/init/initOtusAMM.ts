@@ -1,14 +1,11 @@
 
-import { getGlobalDeploys } from "@lyrafinance/protocol";
-import { toBN } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 import hre, { ethers } from 'hardhat';
 
 export const initOtus = async () => {
 
   try {
 
-    const lyraGlobal = getGlobalDeploys('local'); // mainnet-ovm
-    const quoteAsset = lyraGlobal.QuoteAsset.address;
+    const quoteAsset = '0x041f37A8DcB578Cbe1dE7ed098fd0FE2B7A79056';
 
     const { deployments } = hre;
     const { all } = deployments;
@@ -27,6 +24,17 @@ export const initOtus = async () => {
     const lyraBaseBTC = deployed["LyraBaseBTC"];
 
     const otusAMMContract = await ethers.getContractAt(otusAMM.abi, otusAMM.address);
+
+    console.log("✅ Start INIT OTUS AMM.");
+
+    console.log({
+      otusAMM: otusAMM.address,
+      spreadOptionMarket: spreadOptionMarket.address,
+      rangedMarket: rangedMarket.address,
+      positionMarket: positionMarket.address,
+      lyraBaseETH: lyraBaseETH.address,
+      lyraBaseBTC: lyraBaseBTC.address
+    })
 
     await otusAMMContract.connect(deployer).initialize(
       spreadOptionMarket.address,

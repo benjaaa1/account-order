@@ -18,11 +18,14 @@
     "deploy:lyra": "hardhat run scripts/lyra/localDeploy.ts",
     "deploy:local": "hardhat deploy --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags local && yarn postDeploy",
     "deploy:optimism": "hardhat deploy --network optimistic-mainnet --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags AccountFactory && yarn postDeploy",
+    "deploy:arbitrum": "hardhat deploy --network arbitrum-goerli --write true --export-all ../otus-account-order-ui/src/contracts/hardhat_contracts.json --tags arbitrum && yarn postDeploy",
     "postDeploy": "hardhat run scripts/subgraph/publish.js",
     "e2e": "hardhat run scripts/e2e/local.ts --network localhost",
     "createETHRanged": "hardhat run scripts/rangedmarkets/createETH.ts --network localhost",
     "verify:factory": "npx hardhat verify --network optimistic-mainnet --constructor-args scripts/verify/AccountFactory.js 0xf5eF76ffad699f4D7574F11Ff58fCe0Ac1B2b0Ca",
-    "verify:baseETH": "hardhat run scripts/verify/lyraBaseETH.ts --network optimistic-mainnet"
+    "verify:baseETH": "hardhat run scripts/verify/lyraBaseETH.ts --network arbitrum-goerli",
+    "verify:baseBTC": "hardhat run scripts/verify/lyraBaseBTC.ts --network arbitrum-goerli",
+    "verify:arbitrum": "hardhat run scripts/verify/arbitrum.ts --network arbitrum-goerli" 
   },
   "devDependencies": {
     "@ethersproject/abi": "^5.4.7",

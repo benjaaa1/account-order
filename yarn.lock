@@ -1083,10 +1083,10 @@
   resolved "https://registry.yarnpkg.com/@ledgerhq/logs/-/logs-5.50.0.tgz#29c6419e8379d496ab6d0426eadf3c4d100cd186"
   integrity sha512-swKHYCOZUGyVt4ge0u8a7AwNcA//h4nx5wIi0sruGye1IJ5Cva0GyK9L2/WdX+kWVTKp92ZiEo1df31lrWGPgA==
 
-"@lyrafinance/protocol@npm:@otusfinance/lyra-protocol", "@otusfinance/lyra-protocol@^0.1.22-alpha":
-  version "0.1.22-alpha"
-  resolved "https://registry.yarnpkg.com/@otusfinance/lyra-protocol/-/lyra-protocol-0.1.22-alpha.tgz#c7f6efcf75abd48c8cfcc1bac47a06e28dae181f"
-  integrity sha512-H9jBBqZIMYft9LxZjj9u5QZQiPXieimLszjwqg6DY/L3zMNQ7p9XuCDrDUOH8OFip/oguspg4NW5zB1S0kkngQ==
+"@lyrafinance/protocol@npm:@otusfinance/lyra-protocol":
+  version "0.1.23-alpha"
+  resolved "https://registry.yarnpkg.com/@otusfinance/lyra-protocol/-/lyra-protocol-0.1.23-alpha.tgz#2006e2e4efbf9fcdf5878af7c49f99cc1c682930"
+  integrity sha512-oRJOd5xgggp4Tuyeeaeq0POeO9FtnhwfhQjLD5rtSwzi2PlaVCv0h4Gm8AU2Rk/eEEYDEHEeUrZU4lOqXC9fpw==
   dependencies:
     "@ethersproject/abi" "^5.4.0"
     "@ethersproject/abstract-provider" "^5.6.0"
@@ -1150,31 +1150,31 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@nomicfoundation/ethereumjs-block@5.0.0":
-  version "5.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-block/-/ethereumjs-block-5.0.0.tgz#f27a3df0a796e2af7df4bd226d14748c303d105b"
-  integrity sha512-DfhVbqM5DjriguuSv6r3TgOpyXC76oX8D/VEODsSwJQ1bZGqu4xLLfYPPTacpCAYOnewzJsZli+Ao9TBTAo2uw==
+"@nomicfoundation/ethereumjs-block@5.0.1":
+  version "5.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-block/-/ethereumjs-block-5.0.1.tgz#6f89664f55febbd723195b6d0974773d29ee133d"
+  integrity sha512-u1Yioemi6Ckj3xspygu/SfFvm8vZEO8/Yx5a1QLzi6nVU0jz3Pg2OmHKJ5w+D9Ogk1vhwRiqEBAqcb0GVhCyHw==
   dependencies:
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-trie" "6.0.0"
-    "@nomicfoundation/ethereumjs-tx" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-trie" "6.0.1"
+    "@nomicfoundation/ethereumjs-tx" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     ethereum-cryptography "0.1.3"
     ethers "^5.7.1"
 
-"@nomicfoundation/ethereumjs-blockchain@7.0.0":
-  version "7.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-blockchain/-/ethereumjs-blockchain-7.0.0.tgz#7f5aa889f96d43361aa21ec04f8dc1734e2fc818"
-  integrity sha512-cVRCrXZminZr0Mbx2hm0/109GZLn1v5bf0/k+SIbGn50yZm6YCdQt9CgGT0Gk56N2vy8NhXD4apo167m4LWk6Q==
+"@nomicfoundation/ethereumjs-blockchain@7.0.1":
+  version "7.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-blockchain/-/ethereumjs-blockchain-7.0.1.tgz#80e0bd3535bfeb9baa29836b6f25123dab06a726"
+  integrity sha512-NhzndlGg829XXbqJEYrF1VeZhAwSPgsK/OB7TVrdzft3y918hW5KNd7gIZ85sn6peDZOdjBsAXIpXZ38oBYE5A==
   dependencies:
-    "@nomicfoundation/ethereumjs-block" "5.0.0"
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-ethash" "3.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-trie" "6.0.0"
-    "@nomicfoundation/ethereumjs-tx" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-block" "5.0.1"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-ethash" "3.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-trie" "6.0.1"
+    "@nomicfoundation/ethereumjs-tx" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     abstract-level "^1.0.3"
     debug "^4.3.3"
     ethereum-cryptography "0.1.3"
@@ -1182,103 +1182,103 @@
     lru-cache "^5.1.1"
     memory-level "^1.0.0"
 
-"@nomicfoundation/ethereumjs-common@4.0.0":
-  version "4.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-common/-/ethereumjs-common-4.0.0.tgz#23c97adbbb2b660da03467308821c83e314694e9"
-  integrity sha512-UPpm5FAGAf2B6hQ8aVgO44Rdo0k73oMMCViqNJcKMlk1s9l3rxwuPTp1l20NiGvNO2Pzqk3chFL+BzmLL2g4wQ==
+"@nomicfoundation/ethereumjs-common@4.0.1":
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-common/-/ethereumjs-common-4.0.1.tgz#4702d82df35b07b5407583b54a45bf728e46a2f0"
+  integrity sha512-OBErlkfp54GpeiE06brBW/TTbtbuBJV5YI5Nz/aB2evTDo+KawyEzPjBlSr84z/8MFfj8wS2wxzQX1o32cev5g==
   dependencies:
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     crc-32 "^1.2.0"
 
-"@nomicfoundation/ethereumjs-ethash@3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-ethash/-/ethereumjs-ethash-3.0.0.tgz#b03586948c5bd106c230dbb1c4dc2be5740d774c"
-  integrity sha512-6zNv5Y3vNIsxjrsbKjMInVpo8cmR0c7yjZbBpy7NYuIMtm0JKhQoXsiFN56t/1sfn9V3v0wgrkAixo5v6bahpA==
+"@nomicfoundation/ethereumjs-ethash@3.0.1":
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-ethash/-/ethereumjs-ethash-3.0.1.tgz#65ca494d53e71e8415c9a49ef48bc921c538fc41"
+  integrity sha512-KDjGIB5igzWOp8Ik5I6QiRH5DH+XgILlplsHR7TEuWANZA759G6krQ6o8bvj+tRUz08YygMQu/sGd9mJ1DYT8w==
   dependencies:
-    "@nomicfoundation/ethereumjs-block" "5.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-block" "5.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     abstract-level "^1.0.3"
     bigint-crypto-utils "^3.0.23"
     ethereum-cryptography "0.1.3"
 
-"@nomicfoundation/ethereumjs-evm@2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-evm/-/ethereumjs-evm-2.0.0.tgz#9023e42d0c5807720c42cf01218123c7d3a5c403"
-  integrity sha512-D+tr3M9sictopr3E20OVgme7YF/d0fU566WKh+ofXwmxapz/Dd8RSLSaVeKgfCI2BkzVA+XqXY08NNCV8w8fWA==
+"@nomicfoundation/ethereumjs-evm@2.0.1":
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-evm/-/ethereumjs-evm-2.0.1.tgz#f35681e203363f69ce2b3d3bf9f44d4e883ca1f1"
+  integrity sha512-oL8vJcnk0Bx/onl+TgQOQ1t/534GKFaEG17fZmwtPFeH8S5soiBYPCLUrvANOl4sCp9elYxIMzIiTtMtNNN8EQ==
   dependencies:
     "@ethersproject/providers" "^5.7.1"
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-tx" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-tx" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     debug "^4.3.3"
     ethereum-cryptography "0.1.3"
     mcl-wasm "^0.7.1"
     rustbn.js "~0.2.0"
 
-"@nomicfoundation/ethereumjs-rlp@5.0.0":
-  version "5.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-rlp/-/ethereumjs-rlp-5.0.0.tgz#eececfc6b0758e0f8cf704c8128063e16d1c41cf"
-  integrity sha512-U1A0y330PtGb8Wft4yPVv0myWYJTesi89ItGoB0ICdqz7793KmUhpfQb2vJUXBi98wSdnxkIABO/GmsQvGKVDw==
+"@nomicfoundation/ethereumjs-rlp@5.0.1":
+  version "5.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-rlp/-/ethereumjs-rlp-5.0.1.tgz#0b30c1cf77d125d390408e391c4bb5291ef43c28"
+  integrity sha512-xtxrMGa8kP4zF5ApBQBtjlSbN5E2HI8m8FYgVSYAnO6ssUoY5pVPGy2H8+xdf/bmMa22Ce8nWMH3aEW8CcqMeQ==
 
-"@nomicfoundation/ethereumjs-statemanager@2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-statemanager/-/ethereumjs-statemanager-2.0.0.tgz#d935c7dc96fd4b83106e86ac6a1cc7d3a6e7278c"
-  integrity sha512-tgXtsx8yIDlxWMN+ThqPtGK0ITAuITrDy+GYIgGrnT6ZtelvXWM7SUYR0Mcv578lmGCoIwyHFtSBqOkOBYHLjw==
+"@nomicfoundation/ethereumjs-statemanager@2.0.1":
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-statemanager/-/ethereumjs-statemanager-2.0.1.tgz#8824a97938db4471911e2d2f140f79195def5935"
+  integrity sha512-B5ApMOnlruVOR7gisBaYwFX+L/AP7i/2oAahatssjPIBVDF6wTX1K7Qpa39E/nzsH8iYuL3krkYeUFIdO3EMUQ==
   dependencies:
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
     debug "^4.3.3"
     ethereum-cryptography "0.1.3"
     ethers "^5.7.1"
     js-sdsl "^4.1.4"
 
-"@nomicfoundation/ethereumjs-trie@6.0.0":
-  version "6.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-trie/-/ethereumjs-trie-6.0.0.tgz#71880ee6f5bc3dec296662dafa101778915fed01"
-  integrity sha512-YqPWiNxrZvL+Ef7KHqgru1IlaIGXhu78wd2fxNFOvi/NAQBF845dVfTKKXs1L9x0QBRRQRephgxHCKMuISGppw==
+"@nomicfoundation/ethereumjs-trie@6.0.1":
+  version "6.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-trie/-/ethereumjs-trie-6.0.1.tgz#662c55f6b50659fd4b22ea9f806a7401cafb7717"
+  integrity sha512-A64It/IMpDVODzCgxDgAAla8jNjNtsoQZIzZUfIV5AY6Coi4nvn7+VReBn5itlxMiL2yaTlQr9TRWp3CSI6VoA==
   dependencies:
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     "@types/readable-stream" "^2.3.13"
     ethereum-cryptography "0.1.3"
     readable-stream "^3.6.0"
 
-"@nomicfoundation/ethereumjs-tx@5.0.0":
-  version "5.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-tx/-/ethereumjs-tx-5.0.0.tgz#e421063090b9a1fac4796be97aef2329af5a0ea7"
-  integrity sha512-LTyxI+zBJ+HuEBblUGbxvfKl1hg1uJlz2XhnszNagiBWQSgLb1vQCa1QaXV5Q8cUDYkr/Xe4NXWiUGEvH4e6lA==
+"@nomicfoundation/ethereumjs-tx@5.0.1":
+  version "5.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-tx/-/ethereumjs-tx-5.0.1.tgz#7629dc2036b4a33c34e9f0a592b43227ef4f0c7d"
+  integrity sha512-0HwxUF2u2hrsIM1fsasjXvlbDOq1ZHFV2dd1yGq8CA+MEYhaxZr8OTScpVkkxqMwBcc5y83FyPl0J9MZn3kY0w==
   dependencies:
     "@chainsafe/ssz" "^0.9.2"
     "@ethersproject/providers" "^5.7.2"
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     ethereum-cryptography "0.1.3"
 
-"@nomicfoundation/ethereumjs-util@9.0.0":
-  version "9.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-util/-/ethereumjs-util-9.0.0.tgz#980f6793278929f8f27f97d29cacd890459ac2b3"
-  integrity sha512-9EG98CsEC9BnI7AY27F4QXZ8Vf0re8R9XoxQ0//KWF+B7quu6GQvgTq1RlNUjGh/XNCCJNf8E3LOY9ULR85wFQ==
+"@nomicfoundation/ethereumjs-util@9.0.1":
+  version "9.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-util/-/ethereumjs-util-9.0.1.tgz#530cda8bae33f8b5020a8f199ed1d0a2ce48ec89"
+  integrity sha512-TwbhOWQ8QoSCFhV/DDfSmyfFIHjPjFBj957219+V3jTZYZ2rf9PmDtNOeZWAE3p3vlp8xb02XGpd0v6nTUPbsA==
   dependencies:
     "@chainsafe/ssz" "^0.10.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
     ethereum-cryptography "0.1.3"
 
-"@nomicfoundation/ethereumjs-vm@7.0.0":
-  version "7.0.0"
-  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-vm/-/ethereumjs-vm-7.0.0.tgz#d1a511deccd1d2cf55c7d48de761749b1a86f422"
-  integrity sha512-eHkEoe/4r4+g+fZyIIlQjBHEjCPFs8CHiIEEMvMfvFrV4hyHnuTg4LH7l92ok7TGZqpWxgMG2JOEUFkNsXrKuQ==
+"@nomicfoundation/ethereumjs-vm@7.0.1":
+  version "7.0.1"
+  resolved "https://registry.yarnpkg.com/@nomicfoundation/ethereumjs-vm/-/ethereumjs-vm-7.0.1.tgz#7d035e0993bcad10716c8b36e61dfb87fa3ca05f"
+  integrity sha512-rArhyn0jPsS/D+ApFsz3yVJMQ29+pVzNZ0VJgkzAZ+7FqXSRtThl1C1prhmlVr3YNUlfpZ69Ak+RUT4g7VoOuQ==
   dependencies:
-    "@nomicfoundation/ethereumjs-block" "5.0.0"
-    "@nomicfoundation/ethereumjs-blockchain" "7.0.0"
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-evm" "2.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-statemanager" "2.0.0"
-    "@nomicfoundation/ethereumjs-trie" "6.0.0"
-    "@nomicfoundation/ethereumjs-tx" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
+    "@nomicfoundation/ethereumjs-block" "5.0.1"
+    "@nomicfoundation/ethereumjs-blockchain" "7.0.1"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-evm" "2.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-statemanager" "2.0.1"
+    "@nomicfoundation/ethereumjs-trie" "6.0.1"
+    "@nomicfoundation/ethereumjs-tx" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
     debug "^4.3.3"
     ethereum-cryptography "0.1.3"
     mcl-wasm "^0.7.1"
@@ -1426,6 +1426,23 @@
     ethereumjs-util "^7.0.3"
     proper-lockfile "^4.1.1"
     solidity-ast "^0.4.15"
+
+"@otusfinance/lyra-protocol@^0.1.22-alpha":
+  version "0.1.22-alpha"
+  resolved "https://registry.yarnpkg.com/@otusfinance/lyra-protocol/-/lyra-protocol-0.1.22-alpha.tgz#c7f6efcf75abd48c8cfcc1bac47a06e28dae181f"
+  integrity sha512-H9jBBqZIMYft9LxZjj9u5QZQiPXieimLszjwqg6DY/L3zMNQ7p9XuCDrDUOH8OFip/oguspg4NW5zB1S0kkngQ==
+  dependencies:
+    "@ethersproject/abi" "^5.4.0"
+    "@ethersproject/abstract-provider" "^5.6.0"
+    "@openzeppelin/hardhat-upgrades" "^1.14.0"
+    "@typechain/hardhat" "^3.0.0"
+    dotenv "^9.0.2"
+    hardhat-dependency-compiler "^1.1.2"
+    hardhat-interface-generator "^0.0.6"
+    hardhat-tracer "1.0.0-alpha.6"
+    openzeppelin-contracts-4.4.1 "npm:@openzeppelin/contracts@4.4.1"
+    openzeppelin-contracts-upgradeable-4.5.1 "npm:@openzeppelin/contracts-upgradeable@4.5.1"
+    stochastic "^0.0.14"
 
 "@protobufjs/aspromise@^1.1.1", "@protobufjs/aspromise@^1.1.2":
   version "1.1.2"
@@ -3618,9 +3635,9 @@ commander@3.0.2:
   integrity sha512-Gar0ASD4BDyKC4hl4DwHqDrmvjoxWKZigVnAbn5H1owvm4CxCPdb0HQDehwNYMJpla5+M2tPmPARzhtYuwpHow==
 
 commander@^10.0.0:
-  version "10.0.0"
-  resolved "https://registry.yarnpkg.com/commander/-/commander-10.0.0.tgz#71797971162cd3cf65f0b9d24eb28f8d303acdf1"
-  integrity sha512-zS5PnTI22FIRM6ylNW8G4Ap0IEOyk62fhLSD0+uHRT9McRCLGpkVNvao4bjimpK/GShynyQkFFxHhwMcETmduA==
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/commander/-/commander-10.0.1.tgz#881ee46b4f77d1c1dccc5823433aa39b022cbe06"
+  integrity sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug==
 
 commander@^2.19.0:
   version "2.20.3"
@@ -4139,9 +4156,9 @@ ee-first@1.1.1:
   integrity sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==
 
 electron-to-chromium@^1.3.47:
-  version "1.4.363"
-  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.4.363.tgz#a3d51d16169d8f212f00bafb78cf0667e24c3647"
-  integrity sha512-ReX5qgmSU7ybhzMuMdlJAdYnRhT90UB3k9M05O5nF5WH3wR5wgdJjXw0uDeFyKNhmglmQiOxkAbzrP0hMKM59g==
+  version "1.4.365"
+  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.4.365.tgz#ccd9e352d4493aa288d87e6ea36f3edf350c045e"
+  integrity sha512-FRHZO+1tUNO4TOPXmlxetkoaIY8uwHzd1kKopK/Gx2SKn1L47wJXWD44wxP5CGRyyP98z/c8e1eBzJrgPeiBOg==
 
 elliptic@6.5.4, elliptic@^6.4.0, elliptic@^6.5.2, elliptic@^6.5.3, elliptic@^6.5.4:
   version "6.5.4"
@@ -5927,22 +5944,22 @@ hardhat-tracer@1.0.0-alpha.6:
     ethers "^5.0.24"
 
 hardhat@^2.13.0:
-  version "2.13.1"
-  resolved "https://registry.yarnpkg.com/hardhat/-/hardhat-2.13.1.tgz#12380aef6aa8ce67517e8ee166998be5ced8970e"
-  integrity sha512-ZZL7LQxHmbw4JQJsiEv2qE35nbR+isr2sIdtgZVPp0+zWqRkpr1OT7gmvhCNYfjpEPyfjZIxWriQWlphJhVPLQ==
+  version "2.14.0"
+  resolved "https://registry.yarnpkg.com/hardhat/-/hardhat-2.14.0.tgz#b60c74861494aeb1b50803cf04cc47865a42b87a"
+  integrity sha512-73jsInY4zZahMSVFurSK+5TNCJTXMv+vemvGia0Ac34Mm19fYp6vEPVGF3sucbumszsYxiTT2TbS8Ii2dsDSoQ==
   dependencies:
     "@ethersproject/abi" "^5.1.2"
     "@metamask/eth-sig-util" "^4.0.0"
-    "@nomicfoundation/ethereumjs-block" "5.0.0"
-    "@nomicfoundation/ethereumjs-blockchain" "7.0.0"
-    "@nomicfoundation/ethereumjs-common" "4.0.0"
-    "@nomicfoundation/ethereumjs-evm" "2.0.0"
-    "@nomicfoundation/ethereumjs-rlp" "5.0.0"
-    "@nomicfoundation/ethereumjs-statemanager" "2.0.0"
-    "@nomicfoundation/ethereumjs-trie" "6.0.0"
-    "@nomicfoundation/ethereumjs-tx" "5.0.0"
-    "@nomicfoundation/ethereumjs-util" "9.0.0"
-    "@nomicfoundation/ethereumjs-vm" "7.0.0"
+    "@nomicfoundation/ethereumjs-block" "5.0.1"
+    "@nomicfoundation/ethereumjs-blockchain" "7.0.1"
+    "@nomicfoundation/ethereumjs-common" "4.0.1"
+    "@nomicfoundation/ethereumjs-evm" "2.0.1"
+    "@nomicfoundation/ethereumjs-rlp" "5.0.1"
+    "@nomicfoundation/ethereumjs-statemanager" "2.0.1"
+    "@nomicfoundation/ethereumjs-trie" "6.0.1"
+    "@nomicfoundation/ethereumjs-tx" "5.0.1"
+    "@nomicfoundation/ethereumjs-util" "9.0.1"
+    "@nomicfoundation/ethereumjs-vm" "7.0.1"
     "@nomicfoundation/solidity-analyzer" "^0.1.0"
     "@sentry/node" "^5.18.1"
     "@types/bn.js" "^5.1.0"
@@ -7232,9 +7249,9 @@ long@^4.0.0:
   integrity sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA==
 
 long@^5.0.0:
-  version "5.2.1"
-  resolved "https://registry.yarnpkg.com/long/-/long-5.2.1.tgz#e27595d0083d103d2fa2c20c7699f8e0c92b897f"
-  integrity sha512-GKSNGeNAtw8IryjjkhZxuKB3JzlcLTwjtiQCHKvqQet81I93kXslhDQruGI/QsddO83mcDToBVy7GqGS/zYf/A==
+  version "5.2.3"
+  resolved "https://registry.yarnpkg.com/long/-/long-5.2.3.tgz#a3ba97f3877cf1d778eccbcb048525ebb77499e1"
+  integrity sha512-lcHwpNoggQTObv5apGNCTdJrO69eHOZMi4BNC+rTLER8iHAqGrUVeLh/irVIM7zTw2bOXA8T6uNPeujwOLg/2Q==
 
 looper@^2.0.0:
   version "2.0.0"

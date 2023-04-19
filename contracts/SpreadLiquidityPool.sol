@@ -4,6 +4,7 @@ pragma solidity 0.8.16;
 import "hardhat/console.sol";
 
 // libraries
+import {IERC20Decimals} from "./interfaces/IERC20Decimals.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./synthetix/DecimalMath.sol";
 import "./libraries/ConvertDecimals.sol";
@@ -83,7 +84,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     SpreadOptionMarket public spreadOptionMarket;
 
     // @dev Collateral
-    ERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     /// @dev Parameters relating to depositing and withdrawing from the Otus Spread LP
     LiquidityPoolParameters public lpParams;
@@ -131,7 +132,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      */
     function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner {
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
-        quoteAsset = ERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
     }
 
     /************************************************
@@ -178,12 +179,9 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     function initiateDeposit(address _beneficiary, uint _amountQuote) external nonReentrant {
         // USDC
         uint realQuote = _amountQuote;
-        console.log("realQuote");
-        console.log(realQuote);
 
         // // Convert to 18 dp for LP token minting
         _amountQuote = ConvertDecimals.convertTo18(_amountQuote, quoteAsset.decimals());
-        console.log(_amountQuote);
 
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
@@ -200,8 +198,6 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         _mint(_beneficiary, amountTokens);
         emit DepositProcessed(msg.sender, _beneficiary, 0, _amountQuote, tokenPrice, amountTokens, block.timestamp);
 
-        console.log("depositor bal");
-        console.log(quoteAsset.balanceOf(msg.sender));
         if (!quoteAsset.transferFrom(msg.sender, address(this), realQuote)) {
             revert QuoteTransferFailed(address(this), msg.sender, address(this), _amountQuote);
         }
@@ -221,28 +217,24 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
         }
-        console.log("_amountLiquidityToken");
-        console.log(_amountLiquidityToken);
 
         Liquidity memory liquidity = getLiquidity();
         uint tokenPrice = _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
-
+        console.log("_amountLiquidityToken");
+        console.log(_amountLiquidityToken);
         uint withdrawalValue = _amountLiquidityToken.multiplyDecimal(tokenPrice);
-        console.log("min withdraw");
+        console.log("withdrawalValue");
         console.log(withdrawalValue);
+        console.log("tokenPrice");
+        console.log(tokenPrice);
+
         if (withdrawalValue < lpParams.minDepositWithdraw && _amountLiquidityToken < lpParams.minDepositWithdraw) {
-            console.log("min withdraw");
             revert MinimumWithdrawNotMet(address(this), withdrawalValue, lpParams.minDepositWithdraw);
         }
         // if no spreadOptionMarket trades are using collateral
         // if enough free collateral to withdraw
         if (lockedLiquidity == 0) {
-            console.log("withdrawalValue 1");
-            console.log(withdrawalValue);
-
             withdrawalValue = ConvertDecimals.convertFrom18(withdrawalValue, quoteAsset.decimals());
-            console.log("withdrawalValue 2");
-            console.log(withdrawalValue);
 
             if (!quoteAsset.transfer(_beneficiary, withdrawalValue)) {
                 revert QuoteTransferFailed(address(this), address(this), _beneficiary, withdrawalValue);
@@ -359,6 +351,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     function _tryTransferQuote(address to, uint amount) internal returns (bool success) {
+        amount = ConvertDecimals.convertFrom18(amount, quoteAsset.decimals());
         if (amount > 0) {
             try quoteAsset.transfer(to, amount) returns (bool res) {
                 return res;
@@ -413,14 +406,12 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     function transferShortCollateral(uint _amount) public onlySpreadOptionMarket {
         // check free liquidity
         // @dev add to locked collateral
-        console.log("transfer short collateral");
-        console.log(_amount);
-        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
-        console.log(_amount);
 
         _lockLiquidity(_amount);
         // check active deposits
         // add to traded
+
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
 
         if (_amount > 0) {
             if (!quoteAsset.transfer(address(spreadOptionMarket), _amount)) {
@@ -432,6 +423,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     // @dev lock liquidity
+    // @dev should locked liquidity be kept in 18 decimal precision ? it makes sense to
     function _lockLiquidity(uint _amount) internal {
         Liquidity memory liquidity = getLiquidity();
 
@@ -439,7 +431,13 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
             revert LockingMoreQuoteThanIsFree(address(this), _amount, liquidity.freeLiquidity, lockedLiquidity);
         }
 
+        console.log("lockedLiquidity");
+        console.log(lockedLiquidity);
+        console.log(_amount);
+
         lockedLiquidity = lockedLiquidity + _amount;
+
+        console.log(lockedLiquidity);
     }
 
     // @dev free previously locked liquidity
@@ -447,7 +445,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     // @dev should only be freed when collateral is returned
     function freeLockedLiquidity(uint _amount) public onlySpreadOptionMarket {
         Liquidity memory liquidity = getLiquidity(); // calculates total pool value
-
+        console.log("freeLockedLiquidity _amount");
+        console.log(_amount);
         lockedLiquidity = lockedLiquidity - _amount;
 
         emit ShortCollateralFreed(_amount, liquidity);
@@ -504,18 +503,13 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     function _getLiquidity(uint totalPoolValue, uint reservedTokenValue) internal view returns (Liquidity memory) {
         Liquidity memory liquidity = Liquidity(0, 0, 0);
 
-        uint availableQuote = _totalQuote();
+        uint availableQuote = ConvertDecimals.convertTo18(quoteAsset.balanceOf(address(this)), quoteAsset.decimals());
 
         liquidity.freeLiquidity = availableQuote > reservedTokenValue ? availableQuote - reservedTokenValue : 0;
         liquidity.burnableLiquidity = availableQuote;
         liquidity.NAV = totalPoolValue;
 
         return liquidity;
-    }
-
-    function _totalQuote() internal view returns (uint total) {
-        // free liquidity excludes queued withdrawals
-        total = quoteAsset.balanceOf(address(this));
     }
 
     /************************************************
@@ -525,6 +519,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     /// @dev Get current pool token price without market condition check
     function getTokenPrice() public view returns (uint) {
         Liquidity memory liquidity = getLiquidity();
+
         return _getTokenPrice(liquidity.NAV, getTotalTokenSupply());
     }
 

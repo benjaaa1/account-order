@@ -5,7 +5,7 @@ pragma solidity 0.8.16;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // interfaces
 import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
@@ -49,7 +49,7 @@ contract OtusAMM is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
 
     address public rangedMarketToken; // implementation
 
-    ERC20 public quoteAsset;
+    IERC20 public quoteAsset;
 
     AddressSetLib.AddressSet internal _knownMarkets;
 
@@ -79,7 +79,7 @@ contract OtusAMM is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
         address _btcLyraBase
     ) external onlyOwner initializer {
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
-        quoteAsset = ERC20(_quoteAsset);
+        quoteAsset = IERC20(_quoteAsset);
         // implementations
         positionMarket = _positionMarket;
         rangedMarket = _rangedMarket;

@@ -14,18 +14,18 @@ import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
 import "./synthetix/SafeDecimalMath.sol";
 import "./synthetix/SignedDecimalMath.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "./libraries/ConvertDecimals.sol";
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-// avalon vs newport (SimpleInitializeable is SimpleInitializable)
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // interfaces
 import "./interfaces/ILyraBase.sol";
 import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "./interfaces/IERC20Decimals.sol";
 
 /**
  * @title SpreadOptionMarket
@@ -48,7 +48,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
      *  INIT STATE
      ***********************************************/
 
-    IERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     mapping(bytes32 => ILyraBase) public lyraBases;
 
@@ -86,7 +86,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         address _spreadOptionToken,
         address _spreadLiquidityPool
     ) external onlyOwner initializer {
-        quoteAsset = IERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
 
@@ -509,10 +509,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
 
         /// @dev return difference in actual cost from max cost set
         if (maxCost > actualCost) {
-            console.log("maxCost - actualCost");
-
-            console.log(maxCost - actualCost);
-            _routeExtraBackToUser(maxCost, actualCost);
+            _routeExtraBackToUser(maxCost - actualCost);
         }
     }
 
@@ -848,6 +845,8 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
      * @notice transfers additional collateral required to close from trader
      */
     function _routeCollateralToLPFromUser(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        // current quote asset is holding in 6 decimals no need to convert
         if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), _amount)) {
             revert TransferFundsFromTraderFailed(msg.sender, _amount);
         }
@@ -869,6 +868,8 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
      * @param _amount total collateral returned
      */
     function _routeCollateralToLP(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+
         // @dev free locked liquidity
         if (!quoteAsset.transfer(address(spreadLiquidityPool), _amount)) {
             revert TransferCollateralToLPFailed(_amount);
@@ -880,20 +881,25 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
      * @notice Transfer funds from user to cover options costs
      */
     function _routeCostsFromUser(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        // current quote asset is holding in 6 decimals no need to convert
         if (!quoteAsset.transferFrom(msg.sender, address(this), _amount)) {
             revert TransferFundsFromTraderFailed(msg.sender, _amount);
         }
     }
 
-    function _routeExtraBackToUser(uint __maxCost, uint _actualCost) internal {
-        if (!quoteAsset.transfer(msg.sender, __maxCost - _actualCost)) {
-            revert TransferFundsToTraderFailed(msg.sender, __maxCost - _actualCost);
+    function _routeExtraBackToUser(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        if (!quoteAsset.transfer(msg.sender, _amount)) {
+            revert TransferFundsToTraderFailed(msg.sender, _amount);
         }
     }
 
     function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal {
         uint fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
-        // convert to 6 decimals
+        fee = ConvertDecimals.convertFrom18AndRoundUp(fee, quoteAsset.decimals());
+        // current quote asset is holding in 6 decimals no need to convert
+
         if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
             revert TransferFundsFromTraderFailed(msg.sender, fee);
         }
@@ -903,6 +909,9 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
      * @notice transfer funds from trader to max loss
      */
     function _routeMaxLossCollateralFromTrader(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        // current quote asset is holding in 6 decimals no need to convert
+
         if (!quoteAsset.transferFrom(msg.sender, address(spreadMaxLossCollateral), _amount)) {
             revert TransferFundsFromTraderFailed(msg.sender, _amount);
         }
@@ -918,6 +927,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _routeMaxLossCollateralFromMarket(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(address(spreadMaxLossCollateral), _amount)) {
             // update this revert error
             revert TransferCollateralToLPFailed(_amount);
@@ -925,6 +935,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _routeFundsToTrader(address _trader, uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }

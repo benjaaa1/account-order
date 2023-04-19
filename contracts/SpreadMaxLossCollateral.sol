@@ -6,7 +6,7 @@ import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
 import {SpreadLiquidityPool} from "./SpreadLiquidityPool.sol";
 
 // libraries
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "./interfaces/IERC20Decimals.sol";
 import "./synthetix/SafeDecimalMath.sol";
 import "./synthetix/SignedDecimalMath.sol";
 
@@ -14,6 +14,8 @@ import "./synthetix/SignedDecimalMath.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
+
+import "./libraries/ConvertDecimals.sol";
 
 /**
  * @title SpreadMaxLossCollateral
@@ -28,7 +30,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuar
      *  INIT STATE
      ***********************************************/
 
-    IERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     SpreadOptionMarket internal spreadOptionMarket;
     SpreadLiquidityPool internal spreadLiquidityPool;
@@ -64,7 +66,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuar
         address payable _spreadOptionMarket,
         address _spreadLiquidityPool
     ) external onlyOwner initializer {
-        quoteAsset = IERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
         spreadLiquidityPool = SpreadLiquidityPool(_spreadLiquidityPool);
     }
@@ -89,6 +91,8 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuar
     function _transferQuote(address _recipient, uint _amount) internal {
         // either sends to user
         // or sends to spreadliquidity pool
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+
         if (_amount == 0) {
             return;
         }
