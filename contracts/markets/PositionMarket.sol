@@ -70,6 +70,8 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         rangedMarket = RangedMarket(_rangedMarket);
         quoteAsset = ERC20(_quoteAsset);
         market = _market;
+        // approve spread option market max (approve price/cost of position)
+        quoteAsset.approve(address(spreadOptionMarket), type(uint).max);
     }
 
     function buy(
@@ -77,23 +79,27 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         address _trader,
         TradeInputParameters[] memory _tradesWithPricing
     ) external onlyRangedMarket returns (uint, TradeResult[] memory, TradeResult[] memory, bool isIncrease) {
-        // transfer from user here - all this should happen through position markets
-        quoteAsset.transferFrom(_trader, address(this), price);
-        // approve spread option market max
-        quoteAsset.approve(address(spreadOptionMarket), type(uint).max);
+        // transfer cost from user
+        _transferFromQuote(_trader, address(this), price);
 
         TradeInfo memory tradeInfo = TradeInfo({positionId: positionId, market: market});
-        // 0 max loss posted will fail eventually -
-        (uint id, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket.openPosition(
-            tradeInfo,
-            _tradesWithPricing,
-            price // represents max cost + max loss - premium for amount
-        );
+
+        (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket
+            .openPosition(
+                tradeInfo,
+                _tradesWithPricing,
+                price // represents max cost + max loss - premium for amount
+            );
+
+        // spread option token position is valid
+        if (openedPositionId == 0) {
+            revert NotValidPosition();
+        }
 
         // will only be updated once during trade period
         // update with lyra position ids
         if (tradeInfo.positionId == 0) {
-            positionId = id;
+            positionId = openedPositionId;
         } else {
             isIncrease = true;
         }
@@ -103,18 +109,18 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
 
     function sell(
         uint _price,
+        uint _slippage,
         TradeInputParameters[] memory _tradesWithPricing
     ) external onlyRangedMarket returns (uint funds) {
-        // need to support close partial position
-        // currently spread option market only supports full close for full spreads
-        // _isPartialClose = true
         spreadOptionMarket.closePosition(market, positionId, _tradesWithPricing);
 
         funds = quoteAsset.balanceOf(address(this));
 
-        // if (_price > funds) {
-        //     revert BelowExpectedPrice(_price, funds);
-        // }
+        _price = _price - _price.multiplyDecimal(_slippage);
+
+        if (_price > funds) {
+            revert BelowExpectedPrice(_price, funds);
+        }
     }
 
     /**
@@ -145,12 +151,23 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         return true;
     }
 
+    /************************************************
+     *  MISC
+     ***********************************************/
+
     /**
      * @notice Sends funds to trader after trader exercises positions
      */
     function sendFundsToTrader(address _trader, uint _amount) public onlyRangedMarket {
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
+        }
+    }
+
+    /// @dev transfers cost from user to this position market
+    function _transferFromQuote(address from, address to, uint amount) internal {
+        if (!quoteAsset.transferFrom(from, to, amount)) {
+            revert QuoteTransferFailed(address(this), from, to, amount);
         }
     }
 
@@ -174,10 +191,19 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
      *  ERRORS
      ***********************************************/
 
+    error NotValidPosition();
+
     /// @notice failed attempt to transfer quote
     /// @param trader address
     /// @param amount in quote asset
     error TransferFundsToTraderFailed(address trader, uint amount);
+
+    /// @notice failed attempt to transfer quote
+    /// @param thrower address
+    /// @param from address
+    /// @param to address
+    /// @param amount in quote asset
+    error QuoteTransferFailed(address thrower, address from, address to, uint amount);
 
     /// @notice only otus amm
     /// @param caller address

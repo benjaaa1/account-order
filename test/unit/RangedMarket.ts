@@ -282,13 +282,6 @@ describe("ranged market", async () => {
 
       console.log({ price: fromBN(price) })
 
-      // // get in pricing sell 
-      console.log({
-        premium: fromBN('69027297380006241855'),
-        premium1: fromBN('10838059583964023064'),
-        premium02: fromBN('61754928978171323474'),
-        premium12: fromBN('3871651535724033022')
-      })
       const [price1, _strikeTradesIN1] = await rangedMarketInstance.getInPricing({
         amount,
         slippage,
@@ -390,7 +383,7 @@ describe("ranged market", async () => {
       });
 
       // commented out to find the last max loss collateral balance origin
-      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount1, price1, strikeTradesINSells1);
+      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount1, price1, toBN(slippage.toString()), strikeTradesINSells1);
 
     })
 
@@ -593,10 +586,10 @@ describe("ranged market", async () => {
 
       const maxLossCollateralBefore = parseFloat(fromBN(await sUSD.balanceOf(spreadMaxLossCollateral.address)));
 
-
       expect(maxLossCollateralBefore).to.be.eq(0);
 
       const trader1BalanceBeforeBuy = parseInt(fromBN(await sUSD.balanceOf(trader1.address)));
+      console.log({ trader1BalanceBeforeBuy })
 
       const optionMarketBalanceBeforeTrade = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
 
@@ -607,7 +600,7 @@ describe("ranged market", async () => {
 
       const inRange = 1;
       const slippage = .01;
-      const amount = toBN('.21');
+      const amount = toBN('.15');
 
       const [price, strikeTradesOUT] = await rangedMarketInstance.getOutPricing({
         amount,
@@ -617,6 +610,7 @@ describe("ranged market", async () => {
       });
 
       // approve OUT market
+      console.log({ rangedMarketInfo, price: fromBN(price) })
       await sUSD.connect(trader1).approve(rangedMarketInfo[4], price);
 
       await otusAMM.connect(trader1).buy(
@@ -655,7 +649,7 @@ describe("ranged market", async () => {
       )) as RangedMarket;
 
       const inRange = 1;
-      const slippage = .02;
+      const slippage = 0.05;
       const amount1 = toBN('.02');
 
       const [price1, strikeTradesOUTSells1] = await rangedMarketInstance.getOutPricing({
@@ -665,7 +659,7 @@ describe("ranged market", async () => {
         forceClose: false
       });
 
-      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount1, price1, strikeTradesOUTSells1);
+      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount1, price1, toBN(slippage.toString()), strikeTradesOUTSells1);
 
       const amount2 = toBN('.05');
 
@@ -676,7 +670,7 @@ describe("ranged market", async () => {
         forceClose: false
       });
 
-      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount2, price2, strikeTradesOUTSells2);
+      await otusAMM.connect(trader1).sell(inRange, rangedMarketInfo[0], amount2, price2, toBN(slippage.toString()), strikeTradesOUTSells2);
 
       const endLPBalance = parseInt(fromBN(await sUSD.balanceOf(spreadLiquidityPool.address)))
       const optionMarketBalanceAfterTrade = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
@@ -815,3 +809,4 @@ const isLong = (optionType: BigNumberish | Promise<BigNumberish>) => {
       break;
   }
 }
+
