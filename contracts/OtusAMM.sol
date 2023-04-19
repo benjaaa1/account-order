@@ -34,8 +34,6 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
     using AddressSetLib for AddressSetLib.AddressSet;
     using DecimalMath for uint;
 
-    uint private constant ONE_PERCENT = 1e16;
-
     /************************************************
      *  INIT STATE
      ***********************************************/
@@ -49,7 +47,7 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
 
     address public rangedMarketToken; // implementation
 
-    ERC20 public quoteAsset;
+    address public quoteAsset;
 
     AddressSetLib.AddressSet internal _knownMarkets;
 
@@ -79,7 +77,7 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         address _btcLyraBase
     ) external onlyOwner initializer {
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
-        quoteAsset = ERC20(_quoteAsset);
+        quoteAsset = _quoteAsset;
         // implementations
         positionMarket = _positionMarket;
         rangedMarket = _rangedMarket;
@@ -127,7 +125,7 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
 
         // init & set ranged market
         RangedMarket(rangedMarketClone).initialize(
-            address(quoteAsset),
+            quoteAsset,
             positionMarketInClone,
             positionMarketOutClone,
             tokenInClone,
@@ -142,14 +140,14 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         PositionMarket(positionMarketInClone).initialize(
             payable(address(spreadOptionMarket)),
             rangedMarketClone,
-            address(quoteAsset),
+            quoteAsset,
             _market
         );
 
         PositionMarket(positionMarketOutClone).initialize(
             payable(address(spreadOptionMarket)),
             rangedMarketClone,
-            address(quoteAsset),
+            quoteAsset,
             _market
         );
 
@@ -209,22 +207,20 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         address _rangedMarket,
         uint _amount,
         uint _price,
+        uint _slippage,
         TradeInputParameters[] memory tradesWithPricing // will include max cost with slippage
     ) external knownRangedMarket(_rangedMarket) {
         // @dev check if valid ranged market
         if (_position == RangedPosition.IN) {
-            RangedMarket(_rangedMarket).sellIn(msg.sender, _amount, _price, tradesWithPricing);
+            RangedMarket(_rangedMarket).sellIn(msg.sender, _amount, _price, _slippage, tradesWithPricing);
         } else {
-            RangedMarket(_rangedMarket).sellOut(msg.sender, _amount, _price, tradesWithPricing);
+            RangedMarket(_rangedMarket).sellOut(msg.sender, _amount, _price, _slippage, tradesWithPricing);
         }
     }
 
     /************************************************
-     *  MORE MARKETS
+     *  MORE VAULTS
      ***********************************************/
-    function createLeveragedTokenMarkets() external {
-        revert NotImplemented();
-    }
 
     /************************************************
      * UTILS

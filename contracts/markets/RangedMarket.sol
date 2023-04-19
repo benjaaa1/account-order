@@ -35,9 +35,9 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
 
     uint private constant ONE_PERCENT = 1e16;
 
-    uint public constant IN_STRIKES_LIMIT = 2e18;
+    uint public constant IN_STRIKES_LIMIT = 4;
 
-    uint public constant OUT_STRIKES_LIMIT = 4e18;
+    uint public constant OUT_STRIKES_LIMIT = 2;
 
     /************************************************
      *  INIT STATE
@@ -62,12 +62,13 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
 
     RangedMarketToken public tokenOut;
 
-    uint internal maxLossIn; // set per size of 1
-
-    uint internal maxLossOut;
+    // @dev set per size of 1
+    // @dev max loss of collateral possible
+    uint internal maxLossIn;
 
     bytes32 public market;
 
+    // expiry of board selected for market
     uint public expiry;
 
     // to be cleared at settlement or not - if we use ranged market address for single IN/OUT position+expiry
@@ -106,6 +107,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         lyraBase = otusAMM.lyraBase(_market);
         // validate ranged positions are valid spreads
         (bool isValidIn, ) = spreadOptionMarket.validSpread(_inTrades);
+
         if (!isValidIn) {
             revert NotValidRangedPositionIn(_inTrades);
         }
@@ -137,7 +139,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         int maxLossCall;
         int maxLossPut;
 
-        if (_inTrades.length > IN_STRIKES_LIMIT) {
+        if (IN_STRIKES_LIMIT < _inTrades.length) {
             revert NotValidRangedPositionIn(_inTrades);
         }
 
@@ -172,7 +174,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
 
         maxLossIn = _abs(maxLossCall) > _abs(maxLossPut) ? _abs(maxLossCall) : _abs(maxLossPut);
 
-        if (_outTrades.length > OUT_STRIKES_LIMIT) {
+        if (OUT_STRIKES_LIMIT < _outTrades.length) {
             revert NotValidRangedPositionOut(_outTrades);
         }
 
@@ -244,11 +246,13 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             totalFees += totalFee;
         }
 
-        if (pricing.tradeDirection == 0) {
-            price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
-        } else {
-            price = maxLossIn.multiplyDecimal(pricing.amount) + totalPremium - totalCosts - totalFees;
-        }
+        price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+
+        // if (pricing.tradeDirection == 0) {
+        //     price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+        // } else {
+        //     price = maxLossIn.multiplyDecimal(pricing.amount) + totalPremium - totalCosts - totalFees;
+        // }
 
         return (price, tradesWithCosts);
     }
@@ -265,7 +269,6 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         TradeInputParameters memory trade;
 
         uint totalCosts; // longs
-        uint totalPremium; // shorts
         uint totalFees;
 
         for (uint i = 0; i < outTrades.length; i++) {
@@ -278,23 +281,20 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
                 pricing
             );
 
+            // unnecessary out trades only have longs
             if (_isLong(trade.optionType)) {
+                // sub slippage if closing position
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
-            } else {
-                trade.minTotalCost = totalCost - totalCost.multiplyDecimal(pricing.slippage);
-                totalPremium += totalCost;
             }
 
             // set amount to trade
             trade.amount = pricing.amount;
-
             tradesWithCosts[i] = trade;
-
             totalFees += totalFee;
         }
 
-        price = totalCosts + totalFees - totalPremium;
+        price = totalCosts + totalFees;
 
         return (price, tradesWithCosts);
     }
@@ -315,7 +315,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         address _trader,
         uint _price, // max price for amount with slippage
         TradeInputParameters[] memory tradesWithPricing
-    ) external nonReentrant {
+    ) external nonReentrant onlyOtusAMM {
         bool isIncrease;
         uint positionId;
 
@@ -355,7 +355,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         address _trader,
         uint _price,
         TradeInputParameters[] memory tradesWithPricing
-    ) external nonReentrant {
+    ) external nonReentrant onlyOtusAMM {
         bool isIncrease;
         uint positionId;
 
@@ -399,24 +399,26 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
      * @notice Sell Ranged IN Positions will have multiple options
      * @dev Users can sell to market (expensive)
      * @dev Users can put a "LIMIT" sell order - Buys will get a discount
+     * @param _trader sell in range token or out
      * @param _amount sell in range token or out
      * @param _price sell in range token or out
-     * @param _trader sell in range token or out
+     * @param _slippage sell in range token or out
      * @param tradesWithPricing tradesWithPricing
      */
     function sellIn(
         address _trader,
         uint _amount,
         uint _price,
+        uint _slippage,
         TradeInputParameters[] memory tradesWithPricing
-    ) external nonReentrant {
+    ) external nonReentrant onlyOtusAMM {
         // check if _amount is < rangedmarkettoken amount revert if more
-        uint tokenInBal = tokenOut.balanceOf(msg.sender);
-        if (tokenInBal > _amount) {
+        uint tokenInBal = tokenIn.balanceOf(_trader);
+        if (tokenInBal < _amount) {
             revert SellExceedsBalance(tokenInBal, _amount);
         }
 
-        uint funds = positionMarketIn.sell(_price, _convertParams(tradesWithPricing, _amount));
+        uint funds = positionMarketIn.sell(_price, _slippage, _convertParams(tradesWithPricing, _amount));
         burn(RangedPosition.IN, _trader, _amount, funds);
     }
 
@@ -436,31 +438,37 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         address _trader,
         uint _amount,
         uint _price,
+        uint _slippage,
         TradeInputParameters[] memory tradesWithPricing
-    ) external nonReentrant {
-        uint funds = positionMarketOut.sell(_price, _convertParams(tradesWithPricing, _amount));
+    ) external nonReentrant onlyOtusAMM {
+        uint tokenOutBal = tokenOut.balanceOf(_trader);
+        if (tokenOutBal < _amount) {
+            revert SellExceedsBalance(tokenOutBal, _amount);
+        }
+
+        uint funds = positionMarketOut.sell(_price, _slippage, _convertParams(tradesWithPricing, _amount));
         burn(RangedPosition.OUT, _trader, _amount, funds);
     }
 
-    function burn(RangedPosition _position, address _trader, uint _amount, uint _funds) public onlyOtusAMM {
+    function burn(RangedPosition _position, address _trader, uint _amount, uint _funds) internal {
         if (_position == RangedPosition.IN) {
             tokenIn.burn(_trader, _amount);
 
             if (_funds > 0) {
-                positionMarketOut.sendFundsToTrader(_trader, quoteAsset.balanceOf(address(positionMarketOut)));
+                positionMarketIn.sendFundsToTrader(_trader, _funds);
             }
         } else {
             tokenOut.burn(_trader, _amount);
 
             if (_funds > 0) {
-                positionMarketOut.sendFundsToTrader(_trader, quoteAsset.balanceOf(address(positionMarketOut)));
+                positionMarketOut.sendFundsToTrader(_trader, _funds);
             }
         }
 
         emit Burn(_position, _trader, _amount);
     }
 
-    function mint(RangedPosition _position, address _trader, uint _amount) public onlyOtusAMM {
+    function mint(RangedPosition _position, address _trader, uint _amount) internal {
         if (RangedPosition.IN == _position) {
             tokenIn.mint(_trader, _amount);
         } else {
@@ -504,7 +512,12 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             positionMarketIn.sendFundsToTrader(msg.sender, payout);
         }
 
-        if (positionOutBal > 0) {}
+        if (positionOutBal > 0) {
+            uint tokenOutSupply = tokenOut.getTotalSupply();
+            uint shareOfProfit = tokenOutBal.divideDecimal(tokenOutSupply);
+            uint payout = positionOutBal.multiplyDecimal(shareOfProfit);
+            positionMarketOut.sendFundsToTrader(msg.sender, payout);
+        }
 
         if (tokenInBal > 0) {
             tokenIn.burn(msg.sender, tokenInBal);
