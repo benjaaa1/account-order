@@ -1,38 +1,35 @@
-import { getMarketDeploys, getGlobalDeploys } from "@lyrafinance/protocol";
 import hre from 'hardhat';
 import markets from "../../constants/markets.json";
+import { targets } from "../../constants/lyra.realPricingMockGmx.json";
 
-const _lyraQuoter = "0xa60D490C1984D91AB2E43e5b891b2AB8Ab790752";
 
 const verify = async () => {
 
   try {
-
-    const lyraMarket = getMarketDeploys('mainnet-ovm', 'sBTC');
-    const lyraGlobal = getGlobalDeploys('mainnet-ovm');
 
     const { deployments } = hre;
     const { all } = deployments;
 
     const deployed = await all();
     const lyraBaseBTC = deployed["LyraBaseBTC"];
-
+    const lyraQuoter = deployed["LyraQuoter"];
+    console.log({ lyraBaseBTC: lyraBaseBTC.address, lyraQuoter: lyraQuoter.address })
     await hre.run("verify:verify", {
       address: lyraBaseBTC.address,
       constructorArguments: [
         markets.BTC,
-        lyraGlobal.SynthetixAdapter.address, // synthetix adapter
-        lyraMarket.OptionToken.address,
-        lyraMarket.OptionMarket.address,
-        lyraMarket.LiquidityPool.address,
-        lyraMarket.ShortCollateral.address,
-        lyraMarket.OptionMarketPricer.address,
-        lyraMarket.OptionGreekCache.address,
-        lyraMarket.GWAVOracle.address,
-        _lyraQuoter
+        targets.ExchangeAdapter.address,
+        targets.markets.wBTC.OptionToken.address,
+        targets.markets.wBTC.OptionMarket.address,
+        targets.markets.wBTC.LiquidityPool.address,
+        targets.markets.wBTC.ShortCollateral.address,
+        targets.markets.wBTC.OptionMarketPricer.address,
+        targets.markets.wBTC.OptionGreekCache.address,
+        targets.markets.wBTC.GWAVOracle.address,
+        lyraQuoter.address
       ],
       libraries: {
-        BlackScholes: lyraGlobal.BlackScholes.address
+        BlackScholes: targets.BlackScholes.address
       }
     })
 
@@ -44,7 +41,7 @@ const verify = async () => {
 
 async function main() {
   await verify();
-  console.log("✅ Simple path test end to end new account => deposit => place order.");
+  console.log("✅ Verify Lyra Base BTC .");
 }
 
 main()
