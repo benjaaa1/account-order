@@ -164,13 +164,6 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         }
     }
 
-    /// @dev transfers cost from user to this position market
-    function _transferFromQuote(address from, address to, uint amount) internal {
-        if (!quoteAsset.transferFrom(from, to, amount)) {
-            revert QuoteTransferFailed(address(this), from, to, amount);
-        }
-    }
-
     /************************************************
      *  MISC
      ***********************************************/
@@ -178,7 +171,7 @@ contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
     function _transferFromQuote(address from, address to, uint amount) internal {
         amount = ConvertDecimals.convertFrom18AndRoundUp(amount, quoteAsset.decimals());
         if (!quoteAsset.transferFrom(from, to, amount)) {
-            // revert QuoteTransferFailed(address(this), from, to, amount);
+            revert QuoteTransferFailed(address(this), from, to, amount);
         }
     }
 
