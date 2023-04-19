@@ -207,7 +207,7 @@ describe("ranged market", async () => {
     await sUSD.connect(trader2).approve(spreadOptionMarket.address, toBN('200'));
   })
 
-  describe.only("deposit into lp and attempt to trade in ranged maret token", () => {
+  describe("deposit into lp and attempt to trade in ranged maret token", () => {
 
     let startLPBalance = 0;
     let boardId = toBN("0");
@@ -244,7 +244,7 @@ describe("ranged market", async () => {
 
     });
 
-    it.only("should be able to INIT and SET a simple range market 1 iron butterfly (ranged market in)", async () => {
+    it("should be able to INIT and SET a simple range market 1 iron butterfly (ranged market in)", async () => {
 
       // strikePrices: ["2700", ""2800", "2900", "3000", "3100", "3200", "3300"],
       // SET ranged market POSITION IN => iron condor or iron butterfly
