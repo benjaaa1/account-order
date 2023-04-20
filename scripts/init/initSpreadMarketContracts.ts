@@ -63,7 +63,6 @@ export const initSpread = async () => {
       quoteAsset,
       spreadOptionMarket.address,
       spreadLiquidityPool.address
-
     );
 
     console.log("✅ Init spread market contracts.");

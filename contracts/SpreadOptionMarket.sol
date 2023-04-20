@@ -232,6 +232,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
             revert NotValidPartialClose(_params);
         }
 
+        // add closeBeforeSettlementFlag
         _routeFundsOnClose(position, partialSum, totalTraderProfit, totalCollateral, totalPendingCollateral);
     }
 
@@ -240,7 +241,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         bytes32 _market,
         TradeInputParameters[] memory longTrades
     ) internal returns (uint partialSum, TradeResult[] memory buyCloseResults, uint totalTraderProfit, uint totalFees) {
-        IOptionMarket.Result memory result;
+        OptionMarket.Result memory result;
         buyCloseResults = new TradeResult[](longTrades.length);
         for (uint i = 0; i < longTrades.length; i++) {
             (, uint amount, ) = getLyraPosition(_market, longTrades[i].positionId);
@@ -256,9 +257,9 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
                 partialSum += longTrades[i].amount;
             }
 
-            IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+            OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(longTrades[i]);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(address(this), longTrades[i]);
 
             bool outsideDeltaCutoff = lyraBase(_market)._isOutsideDeltaCutoff(convertedParams.strikeId);
 
@@ -299,7 +300,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
             uint totalCollateral
         )
     {
-        IOptionMarket.Result memory result;
+        OptionMarket.Result memory result;
         sellCloseResults = new TradeResult[](shortTrades.length);
 
         for (uint i = 0; i < shortTrades.length; i++) {
@@ -319,13 +320,13 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
             // collateral owed on sell
             (uint collateralToRemove, uint setCollateralTo) = getRequiredCollateralOnClose(_market, shortTrades[i]);
 
-            IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+            OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
             // should set collateral to correctly for full closes too
             if (partialSum > 0) {
                 shortTrades[i].setCollateralTo = setCollateralTo;
             }
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(shortTrades[i]);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(address(this), shortTrades[i]);
 
             if (!lyraBase(_market)._isOutsideDeltaCutoff(convertedParams.strikeId)) {
                 result = optionMarket.closePosition(convertedParams);
@@ -435,6 +436,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         (buyResults, actualCost, maxCost) = _buyStrikes(_market, longTrades);
 
         // fee is calcualted and transferred separately
+        // @bug
         maxLossPostedCollateral = _maxLossPosted + premiumCollected - actualCost;
 
         uint maxLossCollateralRequirement = validMaxLossAndExpiries(
@@ -485,9 +487,9 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         for (uint i = 0; i < _longTrades.length; i++) {
             TradeInputParameters memory trade = _longTrades[i];
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(address(this), trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
+            OptionMarket.Result memory result = OptionMarket(optionMarket).openPosition(convertedParams);
 
             if (result.totalCost > trade.maxTotalCost) {
                 revert PremiumAboveExpected(result.totalCost, trade.maxTotalCost);
@@ -530,9 +532,9 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         for (uint i = 0; i < _shortTrades.length; i++) {
             TradeInputParameters memory trade = _shortTrades[i];
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(address(this), trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
+            OptionMarket.Result memory result = OptionMarket(optionMarket).openPosition(convertedParams);
 
             if (result.totalCost < trade.minTotalCost) {
                 revert PremiumBelowExpected(result.totalCost, trade.minTotalCost);
@@ -773,6 +775,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
         int availableMaxLoss = SafeCast.toInt256(position.maxLossPosted.multiplyDecimal(percentageOwed));
 
         // first need to find out if we have enough to cover lps
+        // @bug settlement before expiry can also be partial sum 0
         if (partialSum > 0 && (traderTotal + availableMaxLoss - collateralToRecover < 0)) {
             // Because of fees and closing with LyraAmm
             // settlement is more likely to be solvent for LPs
@@ -889,7 +892,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _routeExtraBackToUser(uint _amount) internal {
-        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(msg.sender, _amount)) {
             revert TransferFundsToTraderFailed(msg.sender, _amount);
         }
@@ -1269,18 +1272,20 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _convertParams(
+        address referrer,
         TradeInputParameters memory _params
-    ) internal pure returns (IOptionMarket.TradeInputParameters memory) {
+    ) internal pure returns (OptionMarket.TradeInputParameters memory) {
         return
-            IOptionMarket.TradeInputParameters({
+            OptionMarket.TradeInputParameters({
                 strikeId: _params.strikeId,
                 positionId: _params.positionId,
                 iterations: _params.iterations,
-                optionType: IOptionMarket.OptionType(uint(_params.optionType)),
+                optionType: OptionMarket.OptionType(uint(_params.optionType)),
                 amount: _params.amount,
                 setCollateralTo: _params.setCollateralTo,
                 minTotalCost: _params.minTotalCost,
-                maxTotalCost: _params.maxTotalCost
+                maxTotalCost: _params.maxTotalCost,
+                referrer: referrer
             });
     }
 

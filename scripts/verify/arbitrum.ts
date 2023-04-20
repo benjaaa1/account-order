@@ -28,56 +28,56 @@ const verify = async () => {
 
     // spread liquidity pool
     let LPname = 'Otus Spread Liquidity Pool'
-    let LPsymbol = 'OSL'
-    await hre.run("verify:verify", {
-      address: spreadLiquidityPool.address,
-      constructorArguments: [LPname, LPsymbol],
-    })
+    // let LPsymbol = 'OSL'
+    // await hre.run("verify:verify", {
+    //   address: spreadLiquidityPool.address,
+    //   constructorArguments: [LPname, LPsymbol],
+    // })
 
-    // spread option token
-    let name = 'Otus Spread Position';
-    let symbol = 'OSP';
+    // // spread option token
+    // let name = 'Otus Spread Position';
+    // let symbol = 'OSP';
 
-    await hre.run("verify:verify", {
-      address: spreadOptionToken.address,
-      constructorArguments: [name, symbol],
-    })
+    // await hre.run("verify:verify", {
+    //   address: spreadOptionToken.address,
+    //   constructorArguments: [name, symbol],
+    // })
 
-    // spread max loss collateral
-    await hre.run("verify:verify", {
-      address: spreadMaxLossCollateral.address,
-      constructorArguments: [],
-    })
+    // // spread max loss collateral
+    // await hre.run("verify:verify", {
+    //   address: spreadMaxLossCollateral.address,
+    //   constructorArguments: [],
+    // })
 
-    // otus amm
-    await hre.run("verify:verify", {
-      address: otusAMM.address,
-      constructorArguments: [],
-    })
+    // // otus amm
+    // await hre.run("verify:verify", {
+    //   address: otusAMM.address,
+    //   constructorArguments: [],
+    // })
 
-    // ranged market
-    await hre.run("verify:verify", {
-      address: rangedMarket.address,
-      constructorArguments: [spreadOptionMarket.address, otusAMM.address],
-    })
+    // // ranged market
+    // await hre.run("verify:verify", {
+    //   address: rangedMarket.address,
+    //   constructorArguments: [spreadOptionMarket.address, otusAMM.address],
+    // })
 
-    // ranged market token
-    await hre.run("verify:verify", {
-      address: rangedMarketToken.address,
-      constructorArguments: [18], // not used - @dev remove from constructor
-      libraries: {
+    // // ranged market token
+    // await hre.run("verify:verify", {
+    //   address: rangedMarketToken.address,
+    //   constructorArguments: [18], // not used - @dev remove from constructor
+    //   libraries: {
 
-      }
-    })
+    //   }
+    // })
 
-    // position market
-    await hre.run("verify:verify", {
-      address: positionMarket.address,
-      constructorArguments: [],
-      libraries: {
+    // // position market
+    // await hre.run("verify:verify", {
+    //   address: positionMarket.address,
+    //   constructorArguments: [],
+    //   libraries: {
 
-      }
-    })
+    //   }
+    // })
 
   } catch (error) {
     console.warn({ error });
@@ -87,7 +87,7 @@ const verify = async () => {
 
 async function main() {
   await verify();
-  console.log("✅ Verify Lyra Base ETH .");
+  console.log("✅ Verify Arbitrum .");
 }
 
 main()

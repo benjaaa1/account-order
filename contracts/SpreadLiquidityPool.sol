@@ -16,6 +16,7 @@ import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // spread option market
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -27,7 +28,7 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
  * 1. Collateralizing short options on Lyra.
  * 2. Lends funds to traders through spread option market and other token markets.
  */
-contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
+contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, ERC20 {
     using DecimalMath for uint;
 
     struct Liquidity {
@@ -130,7 +131,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      * @notice initialize users account
      * @param _spreadOptionMarket SpreadOptionMarket
      */
-    function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner {
+    function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner initializer {
         spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
         quoteAsset = IERC20Decimals(_quoteAsset);
     }
