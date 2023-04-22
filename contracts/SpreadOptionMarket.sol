@@ -65,7 +65,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     constructor() Ownable() {}
 
     /// @dev can deposit eth
-    receive() external payable onlyOwner {}
+    receive() external payable {}
 
     /************************************************
      *  INIT
@@ -845,19 +845,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     /**
-     * @notice transfers additional collateral required to close from trader
-     */
-    function _routeCollateralToLPFromUser(uint _amount) internal {
-        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
-        // current quote asset is holding in 6 decimals no need to convert
-        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), _amount)) {
-            revert TransferFundsFromTraderFailed(msg.sender, _amount);
-        }
-
-        spreadLiquidityPool.freeLockedLiquidity(_amount);
-    }
-
-    /**
      * @notice Transfer funds from LP to this contract
      * @param _amount total collateral requested
      */
@@ -930,7 +917,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _routeMaxLossCollateralFromMarket(uint _amount) internal {
-        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(address(spreadMaxLossCollateral), _amount)) {
             // update this revert error
             revert TransferCollateralToLPFailed(_amount);
@@ -938,7 +925,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializable, ReentrancyGuard, IT
     }
 
     function _routeFundsToTrader(address _trader, uint _amount) internal {
-        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }

@@ -21,18 +21,18 @@ const verify = async () => {
     const positionMarket = deployed["PositionMarket"];
 
     // spread option market
-    await hre.run("verify:verify", {
-      address: spreadOptionMarket.address,
-      constructorArguments: [],
-    })
+    // await hre.run("verify:verify", {
+    //   address: spreadOptionMarket.address,
+    //   constructorArguments: [],
+    // })
 
     // spread liquidity pool
     let LPname = 'Otus Spread Liquidity Pool'
-    // let LPsymbol = 'OSL'
-    // await hre.run("verify:verify", {
-    //   address: spreadLiquidityPool.address,
-    //   constructorArguments: [LPname, LPsymbol],
-    // })
+    let LPsymbol = 'OSL'
+    await hre.run("verify:verify", {
+      address: spreadLiquidityPool.address,
+      constructorArguments: [LPname, LPsymbol],
+    })
 
     // // spread option token
     // let name = 'Otus Spread Position';
