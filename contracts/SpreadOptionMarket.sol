@@ -64,7 +64,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     constructor() Ownable() {}
 
     /// @dev can deposit eth
-    receive() external payable onlyOwner {}
+    receive() external payable {}
 
     /************************************************
      *  INIT

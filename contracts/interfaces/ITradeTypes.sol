@@ -81,6 +81,13 @@ interface ITradeTypes {
         uint strikeId;
     }
 
+    struct TradeResultDirect {
+        bytes32 market;
+        uint positionId;
+        uint totalCost;
+        uint totalFee;
+    }
+
     struct Pricing {
         uint amount;
         uint slippage;

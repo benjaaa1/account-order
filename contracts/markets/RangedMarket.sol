@@ -8,6 +8,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 
 // interfaces
 import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
@@ -202,8 +203,11 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         uint totalPremium; // shorts
         uint totalFees;
 
+        bool isOpen = (IOptionMarket.TradeDirection(pricing.tradeDirection) == IOptionMarket.TradeDirection.OPEN);
+
         for (uint i = 0; i < inTrades.length; i++) {
             trade = inTrades[i];
+            trade.amount = pricing.amount;
 
             (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
                 market,
@@ -232,21 +236,42 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             //     }
             // }
 
-            if (_isLong(trade.optionType)) {
+            bool isBuy = isOpen ? _isLong(trade.optionType) : !_isLong(trade.optionType);
+
+            // is long is buy when opening
+            // is short is buy when closing
+
+            // is long will get premium basically when closing
+            // is short will pay cost when closing + will get max loss
+
+            if (isBuy) {
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
             } else {
+                (uint collateralToRemove, uint setCollateralTo) = spreadOptionMarket.getRequiredCollateralOnClose(
+                    market,
+                    trade
+                );
+
+                console.log("collateralToRemove, setCollateralTo");
+                console.log(collateralToRemove, setCollateralTo);
+
                 trade.minTotalCost = totalCost - totalCost.multiplyDecimal(pricing.slippage);
                 totalPremium += trade.minTotalCost;
             }
 
             // set amount to trade
-            trade.amount = pricing.amount;
+            // trade.amount = pricing.amount;
             tradesWithCosts[i] = trade;
             totalFees += totalFee;
         }
 
-        price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+        // if closing need to calculate how much of collateral would be returned if all then all maxloss is returned
+        // if only some of it then multip
+
+        uint maxLossCost = isOpen ? maxLossIn.multiplyDecimal(pricing.amount) : 0;
+
+        price = maxLossCost + totalCosts + totalFees - totalPremium;
 
         // if (pricing.tradeDirection == 0) {
         //     price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
@@ -271,8 +296,11 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         uint totalCosts; // longs
         uint totalFees;
 
+        bool isOpen = (IOptionMarket.TradeDirection(pricing.tradeDirection) == IOptionMarket.TradeDirection.OPEN);
+
         for (uint i = 0; i < outTrades.length; i++) {
             trade = outTrades[i];
+            trade.amount = pricing.amount;
 
             (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
                 market,
@@ -281,15 +309,17 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
                 pricing
             );
 
+            bool isBuy = isOpen ? _isLong(trade.optionType) : !_isLong(trade.optionType);
+
             // unnecessary out trades only have longs
-            if (_isLong(trade.optionType)) {
+            if (isBuy) {
                 // sub slippage if closing position
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
             }
 
             // set amount to trade
-            trade.amount = pricing.amount;
+            // trade.amount = pricing.amount;
             tradesWithCosts[i] = trade;
             totalFees += totalFee;
         }

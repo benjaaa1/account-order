@@ -162,6 +162,10 @@ interface ILyraBase {
     // Misc //
     //////////
 
+    function _isOutsideDeltaCutoff(bytes32 market, uint strikeId) external view returns (bool);
+
+    function _isWithinTradingCutoff(bytes32 market, uint strikeId) external view returns (bool);
+
     function _getBsInput(uint strikeId) external view returns (BlackScholes.BlackScholesInputs memory bsInput);
 
     function _isLong(OptionType optionType) external pure returns (bool);
