@@ -1,11 +1,16 @@
 //SPDX-License-Identifier:ISC
 pragma solidity ^0.8.9;
 
+import "hardhat/console.sol";
+
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
+import {IOptionToken} from "@lyrafinance/protocol/contracts/interfaces/IOptionToken.sol";
+
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/ILyraBase.sol";
 import {BasicFeeCounter} from "@lyrafinance/protocol/contracts/periphery/BasicFeeCounter.sol";
@@ -16,13 +21,13 @@ import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
  * @author Otus
  * @dev Forked from LyraAdapter by Lyra Finance for use with Multi Leg Multi Market One click trading on Otus
  */
-contract LyraAdapter is Ownable, SimpleInitializeable, ITradeTypes {
+contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  STORED CONTRACT ADDRESSES
      ***********************************************/
 
     // susd is used for quoteasset
-    IERC20 internal immutable quoteAsset;
+    IERC20 internal quoteAsset;
     // Lyra trading rewards
     BasicFeeCounter public feeCounter;
 
@@ -36,22 +41,27 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ITradeTypes {
      *  CONSTRUCTOR
      ***********************************************/
 
-    constructor(address _quoteAsset) {
-        quoteAsset = IERC20(_quoteAsset);
-    }
+    constructor() {}
 
     /************************************************
      *  INIT
      ***********************************************/
 
     function adapterInitialize(
+        address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
         address _feeCounter
     ) internal onlyOwner initializer {
+        quoteAsset = IERC20(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
         feeCounter = BasicFeeCounter(_feeCounter);
+
+        if (address(quoteAsset) != address(0)) {
+            quoteAsset.approve(lyraBase(bytes32("ETH")).getOptionMarket(), type(uint).max);
+            quoteAsset.approve(lyraBase(bytes32("BTC")).getOptionMarket(), type(uint).max);
+        }
     }
 
     function setFeeCounter(address _feeCounter) external onlyOwner {
@@ -88,6 +98,8 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ITradeTypes {
                 result.totalFee
             );
         }
+
+        IOptionToken(lyraBase(_market).getOptionToken()).safeTransferFrom(address(this), msg.sender, result.positionId);
 
         return
             TradeResultDirect({
