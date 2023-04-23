@@ -103,10 +103,18 @@ contract LyraBase {
     }
 
     struct MarketParams {
+        // The amount of options traded to move baseIv for the board up or down 1 point (depending on trade direction)
         uint standardSize;
+        // Determines relative move of skew for a given strike compared to shift in baseIv
         uint skewAdjustmentParam;
+        // Interest/risk free rate used in BlackScholes
         int rateAndCarry;
+        // Delta cutoff past which options can be traded (optionD > minD && optionD < 1 - minD) - can use forceClose to bypass
         int deltaCutOff;
+        // Time when trading closes - can use forceClose to bypass
+        uint tradingCutoff;
+        // Delta cutoff at which forceClose can be called (optionD < minD || optionD > 1 - minD) - using call delta
+        int minForceCloseDelta;
     }
 
     struct ExchangeRateParams {
@@ -299,12 +307,17 @@ contract LyraBase {
     }
 
     function getMarketParams() internal view returns (MarketParams memory) {
+        OptionMarketPricer.PricingParameters memory pricingParams = optionPricer.getPricingParams();
+        OptionMarketPricer.TradeLimitParameters memory tradeLimitParams = optionPricer.getTradeLimitParams();
+
         return
             MarketParams({
-                standardSize: optionPricer.getPricingParams().standardSize,
-                skewAdjustmentParam: optionPricer.getPricingParams().skewAdjustmentFactor,
+                standardSize: pricingParams.standardSize,
+                skewAdjustmentParam: pricingParams.skewAdjustmentFactor,
                 rateAndCarry: exchangeAdapter.rateAndCarry(address(optionMarket)),
-                deltaCutOff: optionPricer.getTradeLimitParams().minDelta
+                deltaCutOff: tradeLimitParams.minDelta,
+                tradingCutoff: tradeLimitParams.tradingCutoff,
+                minForceCloseDelta: tradeLimitParams.minForceCloseDelta
             });
     }
 
@@ -422,6 +435,16 @@ contract LyraBase {
         MarketParams memory marketParams = getMarketParams();
         int callDelta = getDeltas(_toDynamic(strikeId))[0];
         return callDelta > (int(DecimalMath.UNIT) - marketParams.deltaCutOff) || callDelta < marketParams.deltaCutOff;
+    }
+
+    /// @notice use latest optionMarket trading cutoff to determine whether trade is too close to expiry
+    function _isWithinTradingCutoff(bytes32 _market, uint strikeId) internal view returns (bool) {
+        MarketParams memory marketParams = getMarketParams();
+        uint[] memory dynamicArray = new uint[](1);
+        dynamicArray[0] = strikeId;
+
+        Strike memory strike = getStrikes(dynamicArray)[0];
+        return strike.expiry - block.timestamp <= marketParams.tradingCutoff;
     }
 
     /*****************************************************

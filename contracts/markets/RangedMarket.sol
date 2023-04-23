@@ -8,6 +8,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 
 // interfaces
 import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
@@ -68,6 +69,7 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
 
     bytes32 public market;
 
+    // expiry of board selected for market
     // expiry of board selected for market
     uint public expiry;
 
@@ -202,8 +204,11 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         uint totalPremium; // shorts
         uint totalFees;
 
+        bool isOpen = (IOptionMarket.TradeDirection(pricing.tradeDirection) == IOptionMarket.TradeDirection.OPEN);
+
         for (uint i = 0; i < inTrades.length; i++) {
             trade = inTrades[i];
+            trade.amount = pricing.amount;
 
             (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
                 market,
@@ -232,21 +237,42 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
             //     }
             // }
 
-            if (_isLong(trade.optionType)) {
+            bool isBuy = isOpen ? _isLong(trade.optionType) : !_isLong(trade.optionType);
+
+            // is long is buy when opening
+            // is short is buy when closing
+
+            // is long will get premium basically when closing
+            // is short will pay cost when closing + will get max loss
+
+            if (isBuy) {
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
             } else {
+                (uint collateralToRemove, uint setCollateralTo) = spreadOptionMarket.getRequiredCollateralOnClose(
+                    market,
+                    trade
+                );
+
+                console.log("collateralToRemove, setCollateralTo");
+                console.log(collateralToRemove, setCollateralTo);
+
                 trade.minTotalCost = totalCost - totalCost.multiplyDecimal(pricing.slippage);
                 totalPremium += trade.minTotalCost;
             }
 
             // set amount to trade
-            trade.amount = pricing.amount;
+            // trade.amount = pricing.amount;
             tradesWithCosts[i] = trade;
             totalFees += totalFee;
         }
 
-        price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
+        // if closing need to calculate how much of collateral would be returned if all then all maxloss is returned
+        // if only some of it then multip
+
+        uint maxLossCost = isOpen ? maxLossIn.multiplyDecimal(pricing.amount) : 0;
+
+        price = maxLossCost + totalCosts + totalFees - totalPremium;
 
         // if (pricing.tradeDirection == 0) {
         //     price = maxLossIn.multiplyDecimal(pricing.amount) + totalCosts + totalFees - totalPremium;
@@ -271,8 +297,11 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         uint totalCosts; // longs
         uint totalFees;
 
+        bool isOpen = (IOptionMarket.TradeDirection(pricing.tradeDirection) == IOptionMarket.TradeDirection.OPEN);
+
         for (uint i = 0; i < outTrades.length; i++) {
             trade = outTrades[i];
+            trade.amount = pricing.amount;
 
             (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
                 market,
@@ -281,19 +310,22 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
                 pricing
             );
 
+            bool isBuy = isOpen ? _isLong(trade.optionType) : !_isLong(trade.optionType);
+
             // unnecessary out trades only have longs
-            if (_isLong(trade.optionType)) {
+            if (isBuy) {
                 // sub slippage if closing position
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
             }
 
             // set amount to trade
-            trade.amount = pricing.amount;
+            // trade.amount = pricing.amount;
             tradesWithCosts[i] = trade;
             totalFees += totalFee;
         }
 
+        price = totalCosts + totalFees;
         price = totalCosts + totalFees;
 
         return (price, tradesWithCosts);
@@ -323,6 +355,11 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         TradeResult[] memory buyResults;
         // user should only set price from ui with slippage if it's enough to cover
         // then it'll succeed if not it'll fail in spread option market
+        // needs to be more validation here to check tradesWithPricing inputs
+
+        if (tradesWithPricing.length != inTrades.length) {
+            revert InvalidTrade();
+        }
         // needs to be more validation here to check tradesWithPricing inputs
 
         if (tradesWithPricing.length != inTrades.length) {
@@ -358,6 +395,10 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
     ) external nonReentrant onlyOtusAMM {
         bool isIncrease;
         uint positionId;
+
+        if (tradesWithPricing.length != outTrades.length) {
+            revert InvalidTrade();
+        }
 
         if (tradesWithPricing.length != outTrades.length) {
             revert InvalidTrade();
@@ -400,6 +441,7 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
      * @dev Users can sell to market (expensive)
      * @dev Users can put a "LIMIT" sell order - Buys will get a discount
      * @param _trader sell in range token or out
+     * @param _trader sell in range token or out
      * @param _amount sell in range token or out
      * @param _price sell in range token or out
      * @param _slippage sell in range token or out
@@ -417,7 +459,6 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
         if (tokenInBal < _amount) {
             revert SellExceedsBalance(tokenInBal, _amount);
         }
-
         uint funds = positionMarketIn.sell(_price, _slippage, _convertParams(tradesWithPricing, _amount));
         burn(RangedPosition.IN, _trader, _amount, funds);
     }
@@ -456,11 +497,13 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
 
             if (_funds > 0) {
                 positionMarketIn.sendFundsToTrader(_trader, _funds);
+                positionMarketIn.sendFundsToTrader(_trader, _funds);
             }
         } else {
             tokenOut.burn(_trader, _amount);
 
             if (_funds > 0) {
+                positionMarketOut.sendFundsToTrader(_trader, _funds);
                 positionMarketOut.sendFundsToTrader(_trader, _funds);
             }
         }
@@ -512,6 +555,12 @@ contract RangedMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
             positionMarketIn.sendFundsToTrader(msg.sender, payout);
         }
 
+        if (positionOutBal > 0) {
+            uint tokenOutSupply = tokenOut.getTotalSupply();
+            uint shareOfProfit = tokenOutBal.divideDecimal(tokenOutSupply);
+            uint payout = positionOutBal.multiplyDecimal(shareOfProfit);
+            positionMarketOut.sendFundsToTrader(msg.sender, payout);
+        }
         if (positionOutBal > 0) {
             uint tokenOutSupply = tokenOut.getTotalSupply();
             uint shareOfProfit = tokenOutBal.divideDecimal(tokenOutSupply);
