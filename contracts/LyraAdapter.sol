@@ -1,28 +1,34 @@
 //SPDX-License-Identifier:ISC
 pragma solidity ^0.8.9;
 
+import "hardhat/console.sol";
+
 // Interfaces
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "./interfaces/IERC20Decimals.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
+import {IOptionToken} from "@lyrafinance/protocol/contracts/interfaces/IOptionToken.sol";
+
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/ILyraBase.sol";
 import {BasicFeeCounter} from "@lyrafinance/protocol/contracts/periphery/BasicFeeCounter.sol";
 import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
+import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
 
 /**
  * @title LyraAdapter
  * @author Otus
  * @dev Forked from LyraAdapter by Lyra Finance for use with Multi Leg Multi Market One click trading on Otus
  */
-contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
+contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  STORED CONTRACT ADDRESSES
      ***********************************************/
 
     // susd is used for quoteasset
-    IERC20 internal quoteAsset;
+    IERC20Decimals internal quoteAsset;
     // Lyra trading rewards
     BasicFeeCounter public feeCounter;
 
@@ -48,11 +54,16 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
         address _btcLyraBase,
         address _feeCounter
     ) internal onlyOwner initializer {
-        quoteAsset = IERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
 
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
         feeCounter = BasicFeeCounter(_feeCounter);
+
+        if (address(quoteAsset) != address(0)) {
+            quoteAsset.approve(lyraBase(bytes32("ETH")).getOptionMarket(), type(uint).max);
+            quoteAsset.approve(lyraBase(bytes32("BTC")).getOptionMarket(), type(uint).max);
+        }
     }
 
     function setFeeCounter(address _feeCounter) external onlyOwner {
@@ -76,9 +87,9 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResultDirect memory) {
-        IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        IOptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
+        OptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
+        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
+        OptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -89,6 +100,8 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
                 result.totalFee
             );
         }
+
+        IOptionToken(lyraBase(_market).getOptionToken()).safeTransferFrom(address(this), msg.sender, result.positionId);
 
         return
             TradeResultDirect({
@@ -129,9 +142,9 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResultDirect memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
 
-        IOptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
+        OptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -161,8 +174,8 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResultDirect memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        IOptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
+        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
+        OptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -189,17 +202,18 @@ contract LyraAdapter is Ownable, SimpleInitializable, ITradeTypes {
 
     function _convertParams(
         TradeInputParameters memory _params
-    ) internal pure returns (IOptionMarket.TradeInputParameters memory) {
+    ) internal view returns (OptionMarket.TradeInputParameters memory) {
         return
-            IOptionMarket.TradeInputParameters({
+            OptionMarket.TradeInputParameters({
                 strikeId: _params.strikeId,
                 positionId: _params.positionId,
                 iterations: _params.iterations,
-                optionType: IOptionMarket.OptionType(uint(_params.optionType)),
+                optionType: OptionMarket.OptionType(uint(_params.optionType)),
                 amount: _params.amount,
                 setCollateralTo: _params.setCollateralTo,
                 minTotalCost: _params.minTotalCost,
-                maxTotalCost: _params.maxTotalCost
+                maxTotalCost: _params.maxTotalCost,
+                referrer: address(this)
             });
     }
 
