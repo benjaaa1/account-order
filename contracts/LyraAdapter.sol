@@ -87,7 +87,8 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResultDirect memory) {
-        IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
+        // option market params include referrer property (not in ioptionmarket interface)
+        OptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
 
         address optionMarket = lyraBase(_market).getOptionMarket();
 
