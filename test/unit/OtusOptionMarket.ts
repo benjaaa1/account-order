@@ -159,58 +159,66 @@ describe("spread option market", async () => {
 
     it("should be able to open a simple trade long call", async () => {
 
+      const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
+      console.log({ bal: fromBN(bal) })
+
       const strikeTrade1: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
-        strikes[2],
+        strikes[3],
         0,// option type (long call 0),
+        toBN('6'),
+        0
+      );
+
+      const strikeTrade2: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
+        strikes[3],
+        3,// option type (long call 0),
         toBN('3'),
         0
       );
 
-      // const strikeTrade2: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
-      //   strikes[3],
-      //   3,// option type (long call 0),
-      //   toBN('1'),
-      //   0
-      // );
+      const tx = await otusOptionMarket.connect(trader1).openLyraPosition(MARKET_KEY_ETH, [strikeTrade2], [strikeTrade1]);
 
-      try {
-        await otusOptionMarket.connect(trader1).openLyraPosition(MARKET_KEY_ETH, [], [strikeTrade1]);
-      } catch (error) {
-        console.log({ error })
-      }
+      const rc = await tx.wait(); // 0ms, as tx is already confirmed
+      const event = rc.events?.find(
+        (event: { event: string }) => event.event === "OpenPosition"
+      );
+
+      console.log({
+        event: event?.args
+      })
 
       const positionsOfOtusMarket = await lyraTestSystem.optionToken.getOwnerPositions(otusOptionMarket.address);
       const positionsOfTrader = await lyraTestSystem.optionToken.getOwnerPositions(trader1.address);
 
-      console.log({
-        positionsOfOtusMarket, positionsOfTrader
-      })
+      expect(positionsOfOtusMarket.length).to.be.equal(0);
+      expect(positionsOfTrader.length).to.be.equal(2);
 
-      const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
-      console.log({ bal: fromBN(bal) })
+
 
     });
 
+    it("should settle positions", async () => {
+      const balBefore = await sUSD.connect(trader1).balanceOf(trader1.address);
+
+      // Wait till board expires
+      await lyraEvm.fastForward(lyraConstants.MONTH_SEC);
+
+      // Mock sETH price
+      await TestSystem.marketActions.mockPrice(lyraTestSystem, toBN("3200"), 'sETH');
+      const totalPositions = (await lyraTestSystem.optionToken.nextId()).sub(1).toNumber();
+      const idsToSettle = Array.from({ length: totalPositions }, (_, i) => i + 1); // create array of [1... totalPositions]
+
+      await lyraTestSystem.optionMarket.settleExpiredBoard(boardId);
+      await lyraTestSystem.shortCollateral.settleOptions(idsToSettle);
+
+      const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
+
+      console.log({ balBefore: fromBN(balBefore), bal: fromBN(bal) })
+    })
 
   });
 
 });
-
-const convertResultToTradeParams = (results: any[]): any[] => {
-  return results.map((param: any) => {
-    return {
-      strikeId: param.strikeId,
-      positionId: param.positionId,
-      iterations: 1,
-      optionType: param.optionType,
-      amount: param.amount,
-      setCollateralTo: toBN('0'),
-      minTotalCost: toBN('0'),
-      maxTotalCost: toBN('100000'),
-      rewardRecipient: ZERO_ADDRESS,
-    }
-  })
-}
 
 const buildOrderWithQuote = async (
   strikeId: BigNumberish,
@@ -228,6 +236,8 @@ const buildOrderWithQuote = async (
     false // is force close
   );
 
+  console.log({ quote })
+
   const maxCostQuote = isLong(optionType) ?
     toBN((parseInt(fromBN(quote.totalPremium.add(quote.totalFee))) * 1.1).toString()) :
     toBN((parseInt(fromBN(quote.totalPremium.add(quote.totalFee))) * .9).toString()); //add slippage
@@ -238,7 +248,7 @@ const buildOrderWithQuote = async (
     iterations: 1,
     optionType: optionType,
     amount: amount,
-    setCollateralTo: toBN('0'),
+    setCollateralTo: toBN('7200'),
     minTotalCost: isLong(optionType) ? toBN('0') : maxCostQuote,
     maxTotalCost: isLong(optionType) ? maxCostQuote : MAX_UINT,
     rewardRecipient: ZERO_ADDRESS,
