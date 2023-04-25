@@ -87,9 +87,26 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResultDirect memory) {
-        OptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
-        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
-        OptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
+        IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
+
+        address optionMarket = lyraBase(_market).getOptionMarket();
+
+        (bool success, bytes memory data) = optionMarket.call(
+            abi.encodeWithSelector(IOptionMarket.openPosition.selector, convertedParams)
+        );
+
+        if (!success) {
+            if (data.length > 0) {
+                assembly {
+                    let data_size := mload(data)
+                    revert(add(32, data), data_size)
+                }
+            } else {
+                revert("LyraAdapter: openPosition failed");
+            }
+        }
+
+        IOptionMarket.Result memory result = abi.decode(data, (IOptionMarket.Result));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(

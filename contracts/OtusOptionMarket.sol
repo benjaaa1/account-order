@@ -10,6 +10,17 @@ import {LyraAdapter} from "./LyraAdapter.sol";
 import "./libraries/ConvertDecimals.sol";
 
 contract OtusOptionMarket is LyraAdapter {
+    /************************************************
+     *  STATE
+     ***********************************************/
+    uint MAX_ITERATION = 4;
+
+    uint COMBO_NEXT_ID = 1;
+
+    /************************************************
+     *  CONSTRUCTOR
+     ***********************************************/
+
     constructor() LyraAdapter() {}
 
     /************************************************
@@ -28,9 +39,23 @@ contract OtusOptionMarket is LyraAdapter {
     }
 
     /************************************************
+     * ADMIN
+     ***********************************************/
+    function setMaxIterations(uint _maxIterations) external onlyOwner {
+        MAX_ITERATION = _maxIterations;
+    }
+
+    /************************************************
      *  Lyra Trade
      ***********************************************/
 
+    /**
+     * @notice Opens a position on Lyra
+     * @dev exeuctes a series of trades on Lyra
+     * @param market the market to trade on
+     * @param _shortTrades the trades to open short positions
+     * @param _longTrades the trades to open long positions
+     */
     function openLyraPosition(
         bytes32 market,
         TradeInputParameters[] memory _shortTrades,
@@ -39,14 +64,14 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInputParameters memory trade;
         TradeResultDirect memory result;
 
-        // calculate collateral required
+        // calculate collateral required from trader
+        // and transfer to this contract
         uint setCollateralTo;
         for (uint i = 0; i < _shortTrades.length; i++) {
             trade = _shortTrades[i];
             setCollateralTo += trade.setCollateralTo;
         }
 
-        // transfer collateral required
         if (setCollateralTo > 0) {
             _transferFromQuote(msg.sender, address(this), setCollateralTo);
         }
@@ -57,9 +82,10 @@ contract OtusOptionMarket is LyraAdapter {
             trade = _shortTrades[i];
             result = _openPosition(market, trade);
             premium += result.totalCost;
+            emit OpenPosition(COMBO_NEXT_ID, result);
         }
 
-        // calculate cost of longs first
+        // calculate max cost of longs
         uint cost;
         for (uint i = 0; i < _longTrades.length; i++) {
             trade = _longTrades[i];
@@ -76,15 +102,15 @@ contract OtusOptionMarket is LyraAdapter {
             trade = _longTrades[i];
             result = _openPosition(market, trade);
             actualCost += result.totalCost;
+            emit OpenPosition(COMBO_NEXT_ID, result);
         }
 
-        console.log(quoteAsset.balanceOf(address(this)));
-
-        if ((cost > actualCost) && (quoteAsset.balanceOf(address(this)) > (cost - actualCost))) {
+        // send extra back to user
+        if (cost > actualCost) {
             sendFundsToTrader(msg.sender, cost - actualCost);
         }
 
-        console.log(quoteAsset.balanceOf(address(this)));
+        COMBO_NEXT_ID++;
     }
 
     function closeLyraPosition(bytes32 market, TradeInputParameters memory _trade) external nonReentrant {
@@ -112,6 +138,12 @@ contract OtusOptionMarket is LyraAdapter {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }
     }
+
+    /************************************************
+     *  EVENTS
+     ***********************************************/
+
+    event OpenPosition(uint comobId, TradeResultDirect result);
 
     /************************************************
      *  ERRORS
