@@ -135,7 +135,7 @@ contract OtusOptionMarket is LyraAdapter {
     function sendFundsToTrader(address _trader, uint _amount) internal {
         _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(_trader, _amount)) {
-            revert TransferFundsToTraderFailed(_trader, _amount);
+            revert TransferFundsToTraderFailed(_trader, _amount, quoteAsset.balanceOf(address(this)));
         }
     }
 
@@ -152,7 +152,7 @@ contract OtusOptionMarket is LyraAdapter {
     /// @notice failed attempt to transfer quote
     /// @param trader address
     /// @param amount in quote asset
-    error TransferFundsToTraderFailed(address trader, uint amount);
+    error TransferFundsToTraderFailed(address trader, uint amount, uint balance);
 
     /// @notice failed attempt to transfer quote
     /// @param thrower address
