@@ -7,6 +7,7 @@ import "@nomiclabs/hardhat-waffle";
 import { lyraContractPaths } from "@lyrafinance/protocol/dist/test/utils/package/index-paths";
 import "@nomiclabs/hardhat-etherscan";
 import 'solidity-coverage';
+import 'hardhat-docgen';
 
 dotenv.config();
 
@@ -104,6 +105,11 @@ const config = {
             arbitrumGoerli: process.env.TESTNET_API_KEY
         },
 
+    },
+    docgen: {
+        path: './docs',
+        clear: true,
+        runOnCompile: true,
     }
 };
 

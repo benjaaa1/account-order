@@ -407,7 +407,6 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
     function transferShortCollateral(uint _amount) public onlySpreadOptionMarket {
         // check free liquidity
         // @dev add to locked collateral
-
         _lockLiquidity(_amount);
         // check active deposits
         // add to traded
@@ -429,7 +428,8 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
         Liquidity memory liquidity = getLiquidity();
 
         if (_amount > liquidity.freeLiquidity) {
-            revert LockingMoreQuoteThanIsFree(address(this), _amount, liquidity.freeLiquidity, lockedLiquidity);
+            // revert LockingMoreQuoteThanIsFree(address(this), _amount, liquidity.freeLiquidity, lockedLiquidity);
+            revert("Locking More Quote Than is Free");
         }
 
         console.log("lockedLiquidity");

@@ -50,3 +50,23 @@ Keeper would need to check each block (gelato)
 ## Quote Asset Decimals
 
 ## USDC 6 decimal points
+
+# Otus Product Marketing
+
+## Otus Markets Built on Lyra
+
+-   Otus Option Spread Markets
+-   Otus Ranged Markets (Will also be ERC 1155 Will have 2 tokens OUT and IN)
+
+## Will support multiple options platforms (aaevo premia )
+
+-   Otus Option Markets (compare to Hegic.co pricing)
+
+#
+
+ERC1155
+
+-   OtusOptionMarket
+    > User buys multiple options
+    > ERC1155 is minted when it's a combo
+    > When it's a single strike no ERC1155 token needed
