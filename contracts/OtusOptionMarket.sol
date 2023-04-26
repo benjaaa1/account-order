@@ -64,6 +64,11 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInputParameters memory trade;
         TradeResultDirect memory result;
 
+        // valid trade size
+        if (_shortTrades.length > MAX_ITERATION || _longTrades.length > MAX_ITERATION) {
+            revert("LyraAdapter: too many trades");
+        }
+
         // calculate collateral required from trader
         // and transfer to this contract
         uint setCollateralTo;
