@@ -93,7 +93,7 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
         address optionMarket = lyraBase(_market).getOptionMarket();
 
         (bool success, bytes memory data) = optionMarket.call(
-            abi.encodeWithSelector(IOptionMarket.openPosition.selector, convertedParams)
+            abi.encodeWithSelector(OptionMarket.openPosition.selector, convertedParams)
         );
 
         if (!success) {
