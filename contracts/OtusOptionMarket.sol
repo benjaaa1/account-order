@@ -112,7 +112,8 @@ contract OtusOptionMarket is LyraAdapter {
 
         // send extra back to user
         if (cost > actualCost) {
-            sendFundsToTrader(msg.sender, cost - actualCost);
+            uint bal = quoteAsset.balanceOf(address(this));
+            sendFundsToTrader(msg.sender, bal);
         }
 
         COMBO_NEXT_ID++;
@@ -140,7 +141,8 @@ contract OtusOptionMarket is LyraAdapter {
     function sendFundsToTrader(address _trader, uint _amount) internal {
         _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(_trader, _amount)) {
-            revert TransferFundsToTraderFailed(_trader, _amount, quoteAsset.balanceOf(address(this)));
+            //revert TransferFundsToTraderFailed(_trader, _amount, quoteAsset.balanceOf(address(this)));
+            revert("TransferFundsToTraderFailed");
         }
     }
 
