@@ -15,7 +15,9 @@ import {
   LyraBase,
   LyraQuoter,
   MockERC20,
-  OtusOptionMarket
+  OtusOptionMarket,
+  OtusOptionToken,
+  SettlementCalculator
 } from "../../typechain-types";
 import { LyraGlobal } from "@lyrafinance/protocol/dist/test/utils/package/parseFiles";
 import { BigNumber, BigNumberish } from "ethers";
@@ -32,6 +34,8 @@ let optionToken: OptionToken;
 
 // otus option market contracts
 let otusOptionMarket: OtusOptionMarket;
+let otusOptionToken: OtusOptionToken;
+let settlementCalculator: SettlementCalculator;
 
 let deployer: SignerWithAddress;
 let owner: SignerWithAddress;
@@ -109,6 +113,14 @@ describe("spread option market", async () => {
 
   before("deploy spread option market contracts", async () => {
 
+    const SettlementCalculator = await ethers.getContractFactory("SettlementCalculator");
+    settlementCalculator = (await SettlementCalculator.connect(deployer).deploy()) as SettlementCalculator;
+
+    const OtusOptionToken = await ethers.getContractFactory("OtusOptionToken");
+    let _name = 'Otus Spread Position';
+    let _symbol = 'OSP';
+    otusOptionToken = (await OtusOptionToken.connect(deployer).deploy(_name, _symbol)) as OtusOptionToken;
+
     const OtusOptionMarket = await ethers.getContractFactory("OtusOptionMarket");
     otusOptionMarket = (await OtusOptionMarket.connect(deployer).deploy()) as OtusOptionMarket;
 
@@ -116,7 +128,16 @@ describe("spread option market", async () => {
       lyraTestSystem.snx.quoteAsset.address,
       lyraBaseETH.address,
       lyraBaseETH.address,
-      ZERO_ADDRESS
+      ZERO_ADDRESS,
+      otusOptionToken.address,
+      settlementCalculator.address
+    );
+
+    await otusOptionToken.connect(deployer).initialize(
+      otusOptionMarket.address,
+      ZERO_ADDRESS,
+      lyraBaseETH.address,
+      lyraBaseETH.address,
     );
 
   });
@@ -154,13 +175,11 @@ describe("spread option market", async () => {
 
     before("set strikes array", async () => {
       strikes = await lyraTestSystem.optionMarket.getBoardStrikes(boardId);
-      console.log({ strikes })
     });
 
-    it("should be able to open a simple trade long call", async () => {
+    it("should be able to open a simple trade bull spread", async () => {
 
       const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
-      console.log({ bal: fromBN(bal) })
 
       const strikeTrade1: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
         strikes[3],
@@ -176,24 +195,63 @@ describe("spread option market", async () => {
         0
       );
 
-      const tx = await otusOptionMarket.connect(trader1).openLyraPosition(MARKET_KEY_ETH, [strikeTrade2], [strikeTrade1]);
+      const tx = await otusOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, [strikeTrade2], [strikeTrade1]);
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
-        (event: { event: string }) => event.event === "OpenPosition"
+        (event: { event: string }) => event.event === "Trade"
       );
-
-      console.log({
-        event: event?.args
-      })
 
       const positionsOfOtusMarket = await lyraTestSystem.optionToken.getOwnerPositions(otusOptionMarket.address);
       const positionsOfTrader = await lyraTestSystem.optionToken.getOwnerPositions(trader1.address);
+      const otusPositionsOfTrader = await otusOptionToken.getOwnerPositions(trader1.address);
 
-      expect(positionsOfOtusMarket.length).to.be.equal(0);
-      expect(positionsOfTrader.length).to.be.equal(2);
+      expect(positionsOfOtusMarket.length).to.be.equal(2);
+      expect(positionsOfTrader.length).to.be.equal(0);
+      expect(otusPositionsOfTrader.length).to.be.equal(1);
+      console.log({ otusPositionsOfTrader: otusPositionsOfTrader.map(otusPosition => otusPosition.positionId) })
 
+    });
 
+    it("should be able to open a simple trade put spread", async () => {
+
+      const strikeTrade1: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
+        strikes[3],
+        1,// option type (long call 0),
+        toBN('6'),
+        0
+      );
+
+      const strikeTrade2: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
+        strikes[3],
+        4,// option type (long call 0),
+        toBN('3'),
+        0
+      );
+
+      const tx = await otusOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, [strikeTrade2], [strikeTrade1]);
+
+      const rc = await tx.wait(); // 0ms, as tx is already confirmed
+      const event = rc.events?.find(
+        (event: { event: string }) => event.event === "Trade"
+      );
+
+      const positionsOfOtusMarket = await lyraTestSystem.optionToken.getOwnerPositions(otusOptionMarket.address);
+      const positionsOfTrader = await lyraTestSystem.optionToken.getOwnerPositions(trader1.address);
+      const otusPositionsOfTrader = await otusOptionToken.getOwnerPositions(trader1.address);
+
+      console.log({ otusPositionsOfTrader: otusPositionsOfTrader.map(otusPosition => otusPosition.positionId) })
+      expect(positionsOfOtusMarket.length).to.be.equal(4);
+      expect(positionsOfTrader.length).to.be.equal(0);
+      expect(otusPositionsOfTrader.length).to.be.equal(2);
+
+      await otusOptionMarket.connect(trader1).burnAndTransfer(otusPositionsOfTrader[1].positionId);
+
+      const positionsOfTraderAfter = await lyraTestSystem.optionToken.getOwnerPositions(trader1.address);
+      const otusPositionsOfTraderAfter = await otusOptionToken.getOwnerPositions(trader1.address);
+
+      expect(positionsOfTraderAfter.length).to.be.equal(2);
+      expect(otusPositionsOfTraderAfter.length).to.be.equal(1);
 
     });
 
@@ -211,9 +269,11 @@ describe("spread option market", async () => {
       await lyraTestSystem.optionMarket.settleExpiredBoard(boardId);
       await lyraTestSystem.shortCollateral.settleOptions(idsToSettle);
 
-      const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
+      const positionIds = await otusOptionToken.getPositionIds();
+      await otusOptionMarket.settleOption(positionIds[0]);
 
-      console.log({ balBefore: fromBN(balBefore), bal: fromBN(bal) })
+      const bal = await sUSD.connect(trader1).balanceOf(trader1.address);
+      expect(bal).to.be.gt(balBefore);
     })
 
   });
@@ -235,8 +295,6 @@ const buildOrderWithQuote = async (
     0, // open
     false // is force close
   );
-
-  console.log({ quote })
 
   const maxCostQuote = isLong(optionType) ?
     toBN((parseInt(fromBN(quote.totalPremium.add(quote.totalFee))) * 1.1).toString()) :

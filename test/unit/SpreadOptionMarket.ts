@@ -17,12 +17,14 @@ import {
   MockERC20,
   SpreadLiquidityPool,
   SpreadMaxLossCollateral,
-  SpreadOptionMarket,
-  SpreadOptionToken
+  SpreadMarket,
+  OtusOptionToken,
+  OtusOptionMarket
 } from "../../typechain-types";
 import { LyraGlobal } from "@lyrafinance/protocol/dist/test/utils/package/parseFiles";
 import { BigNumber, BigNumberish } from "ethers";
 import { ITradeTypes } from "../../typechain-types/contracts/SpreadOptionMarket";
+import { MaxLossCalculator, SettlementCalculator } from "../../typechain-types/contracts/utils";
 
 const MARKET_KEY_ETH = ethers.utils.formatBytes32String("ETH");
 
@@ -32,10 +34,13 @@ let lyraBaseETH: LyraBase;
 let lyraQuoter: LyraQuoter;
 
 // spread market contracts
-let spreadOptionMarket: SpreadOptionMarket;
+let spreadOptionMarket: SpreadMarket;
+let otusOptionMarket: OtusOptionMarket;
 let spreadLiquidityPool: SpreadLiquidityPool;
-let spreadOptionToken: SpreadOptionToken;
+let spreadOptionToken: OtusOptionToken;
 let spreadMaxLossCollateral: SpreadMaxLossCollateral;
+let maxLossCalculator: MaxLossCalculator;
+let settlementCalculator: SettlementCalculator;
 
 let deployer: SignerWithAddress;
 let owner: SignerWithAddress;
@@ -121,16 +126,25 @@ describe("spread option market", async () => {
       LPsymbol
     )) as SpreadLiquidityPool;
 
-    const SpreadOptionMarket = await ethers.getContractFactory("SpreadOptionMarket");
-    spreadOptionMarket = (await SpreadOptionMarket.connect(deployer).deploy()) as SpreadOptionMarket;
+    const OtusOptionMarket = await ethers.getContractFactory("OtusOptionMarket");
+    otusOptionMarket = (await OtusOptionMarket.connect(deployer).deploy()) as OtusOptionMarket;
 
-    const SpreadOptionToken = await ethers.getContractFactory("SpreadOptionToken");
+    const SpreadOptionMarket = await ethers.getContractFactory("SpreadMarket");
+    spreadOptionMarket = (await SpreadOptionMarket.connect(deployer).deploy()) as SpreadMarket;
+
+    const OtusOptionToken = await ethers.getContractFactory("OtusOptionToken");
     let _name = 'Otus Spread Position';
     let _symbol = 'OSP';
-    spreadOptionToken = (await SpreadOptionToken.connect(deployer).deploy(_name, _symbol)) as SpreadOptionToken;
+    spreadOptionToken = (await OtusOptionToken.connect(deployer).deploy(_name, _symbol)) as OtusOptionToken;
 
     const SpreadMaxLossCollateral = await ethers.getContractFactory("SpreadMaxLossCollateral");
     spreadMaxLossCollateral = (await SpreadMaxLossCollateral.connect(deployer).deploy()) as SpreadMaxLossCollateral;
+
+    const MaxLossCalculator = await ethers.getContractFactory("MaxLossCalculator");
+    maxLossCalculator = (await MaxLossCalculator.connect(deployer).deploy()) as MaxLossCalculator;
+
+    const SettlementCalculator = await ethers.getContractFactory("SettlementCalculator");
+    settlementCalculator = (await SettlementCalculator.connect(deployer).deploy()) as SettlementCalculator;
 
     await spreadOptionMarket.connect(deployer).initialize(
       lyraTestSystem.snx.quoteAsset.address,
@@ -138,7 +152,9 @@ describe("spread option market", async () => {
       lyraBaseETH.address,
       spreadMaxLossCollateral.address,
       spreadOptionToken.address,
-      spreadLiquidityPool.address
+      spreadLiquidityPool.address,
+      maxLossCalculator.address,
+      settlementCalculator.address
     );
 
     await spreadLiquidityPool.connect(deployer).initialize(
@@ -147,6 +163,7 @@ describe("spread option market", async () => {
     );
 
     await spreadOptionToken.connect(deployer).initialize(
+      otusOptionMarket.address,
       spreadOptionMarket.address,
       lyraBaseETH.address,
       lyraBaseETH.address,
@@ -223,14 +240,11 @@ describe("spread option market", async () => {
         0
       );
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1];
-
-      const maxLossPosted = strikeTrade1.maxTotalCost; // max loss is + maxloss + maxcost - premium + spread fee
-      try {
-        await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, maxLossPosted);
-      } catch (error) {
-        console.log({ error })
-      }
+      await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [],
+        [strikeTrade1]
+      );
 
       const position = await spreadOptionToken.getOwnerPositions(trader1.address);
 
@@ -239,47 +253,6 @@ describe("spread option market", async () => {
       // market should not hold any funds after completing trade
       const optionMarketBalanceAfterTrade = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
       expect(optionMarketBalanceAfterTrade).to.be.eq(optionMarketBalanceBeforeTrade);
-
-    });
-
-    it('should revert spread trade exceeding cost', async () => {
-
-      const strikeTrade1: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
-        strikes[6],
-        0,// option type (long call 0),
-        toBN('4'),
-        0
-      );
-
-      const strikeTrade2: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
-        strikes[2],
-        3, // option type (short call 3)
-        toBN('2'),
-        0
-      )
-
-      const strikeTrade3: ITradeTypes.TradeInputParametersStruct = await buildOrderWithQuote(
-        strikes[3],
-        3, // option type (short call 3)
-        toBN('2'),
-        0
-      )
-
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      console.log({ maxLossPostedCollateral: fromBN('1310799713173767155407') })
-      await expect(
-        spreadOptionMarket.connect(trader1).openPosition(
-          { positionId: 0, market: MARKET_KEY_ETH },
-          strikeTrades,
-          toBN('150')
-        )
-      ).to.be.revertedWith(
-        'MaxLossRequirementNotMet',
-      );
-
-      const position = await spreadOptionToken.getOwnerPositions(trader1.address);
-
-      expect(position.length).to.be.eq(1);
 
     });
 
@@ -308,8 +281,11 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('3680'));
+      await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      );
 
       // get position id and event
       const position = await spreadOptionToken.getOwnerPositions(trader1.address);
@@ -322,7 +298,7 @@ describe("spread option market", async () => {
 
     });
 
-    it('should settle positions and return collateral to liquidity pool with fee 1', async () => {
+    it('should settle positions and return collateral to liquidity pool with fee - 1', async () => {
 
       // Wait till board expires
       await lyraEvm.fastForward(lyraConstants.MONTH_SEC);
@@ -338,7 +314,7 @@ describe("spread option market", async () => {
       const idsToSettle = Array.from({ length: totalPositions }, (_, i) => i + 1); // create array of [1... totalPositions]
       await lyraTestSystem.optionMarket.settleExpiredBoard(boardId);
       await lyraTestSystem.shortCollateral.settleOptions(idsToSettle);
-
+      console.log({ idsToSettle })
       const positionIds = await spreadOptionToken.getPositionIds();
 
       await spreadOptionMarket.settleOption(positionIds[0]);
@@ -422,8 +398,14 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2];
-      await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('3500'));
+      const positionsBefore = await spreadOptionToken.getOwnerPositions(trader1.address);
+      expect(positionsBefore.length).to.be.eq(0);
+
+      await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2],
+        [strikeTrade1],
+      );
 
       // get position id and event
       const position = await spreadOptionToken.getOwnerPositions(trader1.address);
@@ -454,7 +436,15 @@ describe("spread option market", async () => {
       await lyraTestSystem.shortCollateral.settleOptions([5, 6]);
 
       const positionIds = await spreadOptionToken.getPositionIds();
-
+      console.log({
+        positionIds: fromBN(positionIds[0]),
+        maxLossCollateralBefore,
+        totalCollateral: fromBN('19800000000000000000000'),
+        totalLPSettlementAmount: fromBN('17050000000000000000000'),
+        maxLoss: fromBN('487300000000002200000'),
+        actualCost: fromBN('582080058285139446362'),
+        premium: fromBN('1851790874243541046669')
+      })
       await spreadOptionMarket.settleOption(positionIds[0]);
 
       const maxLossCollateralAfter = parseInt(fromBN(await sUSD.balanceOf(spreadMaxLossCollateral.address)));
@@ -468,7 +458,8 @@ describe("spread option market", async () => {
       expect(lpBalanceAfterSettlement).to.be.greaterThanOrEqual(lpBalanceBeforeSettlement);
       expect(optionMarketAfterOtusSpreadSettlement).to.be.eq(optionMarketBalanceBeforeSettlement);
 
-    })
+    });
+
   });
 
   describe("deposit into lp open and close a position after spot price moves significantly up", () => {
@@ -549,8 +540,11 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'));
+      const tx = await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      );
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
@@ -559,6 +553,7 @@ describe("spread option market", async () => {
       // @ts-ignore
       const [
         trader,
+        positionId,
         sellResults,
         buyResults,
         totalCollateralToAdd, // borrowed
@@ -614,7 +609,6 @@ describe("spread option market", async () => {
       expect(optionMarketAfterClose).to.be.eq(toBN('0'));
 
     });
-
 
   });
 
@@ -693,8 +687,11 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'));
+      const tx = await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      );
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
@@ -703,6 +700,7 @@ describe("spread option market", async () => {
       // @ts-ignore
       const [
         trader,
+        positionId,
         sellResults,
         buyResults,
         totalCollateralToAdd, // borrowed
@@ -844,8 +842,11 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'));
+      const tx = await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      );
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
@@ -854,6 +855,7 @@ describe("spread option market", async () => {
       // @ts-ignore
       const [
         trader,
+        positionId,
         sellResults,
         buyResults,
         totalCollateralToAdd, // borrowed
@@ -899,7 +901,11 @@ describe("spread option market", async () => {
       const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
 
       await expect(
-        spreadOptionMarket.connect(trader1).openPosition({ positionId: spreadPositionId, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'))).to.be.revertedWith(
+        spreadOptionMarket.connect(trader1).openPosition(
+          { positionId: spreadPositionId, market: MARKET_KEY_ETH },
+          [strikeTrade2, strikeTrade3],
+          [strikeTrade1],
+        )).to.be.revertedWith(
           'NotValidIncrease',
         );
 
@@ -928,19 +934,11 @@ describe("spread option market", async () => {
         14
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-
-      // console.log({
-      //   tradeResults: tradeResults.map(trade => {
-      //     return fromBN(trade.positionId);
-      //   })
-      // })
-
-      // await expect(
-      //  ).to.be.revertedWith(
-      //     'NotValidIncrease',
-      //   );
-      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: spreadPositionId, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'))
+      const tx = await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: spreadPositionId, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      )
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
@@ -949,6 +947,7 @@ describe("spread option market", async () => {
       // @ts-ignore
       const [
         trader,
+        positionId,
         sellResults,
         buyResults,
         totalCollateralToAdd, // borrowed
@@ -995,67 +994,6 @@ describe("spread option market", async () => {
 
     })
 
-    // it("should be able to close position on lyra after it is updated and settle on otus", async () => {
-
-    //   const optionMarketBeforeClose = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
-    //   expect(optionMarketBeforeClose).to.be.eq(toBN('0'));
-    //   const traderBalanceBeforeClose = parseInt(fromBN(await sUSD.balanceOf(trader1.address)))
-
-    //   // big profit on buys
-    //   // big loss on sells (lp must recover)
-    //   await TestSystem.marketActions.mockPrice(lyraTestSystem, toBN("1200"), 'sETH');
-    //   await lyraEvm.fastForward(60000);
-
-
-    //   const positions = await spreadOptionToken.getOwnerPositions(trader1.address);
-    //   const position = positions[0];
-    //   console.log({ positions })
-    //   // console.log({
-    //   //   tradeResults: tradeResults.map(trade => {
-    //   //     return { positionId: fromBN(trade.positionId), amount: fromBN(trade.amount) };
-    //   //   })
-    //   // })
-
-    //   // let closeResults = tradeResults.map(tradeResult => {
-    //   //   const positionId = tradeResult
-    //   //   return
-    //   // })
-
-    //   const amounts: Record<string, BigNumber> = {
-    //     '0.000000000000000013': toBN('3'),
-    //     '0.000000000000000014': toBN('2'),
-    //     '0.000000000000000015': toBN('7'),
-    //   }
-
-    //   tradeResults = tradeResults.map((tradeResult) => {
-    //     console.log(tradeResult.positionId)
-    //     return { ...tradeResult, amount: amounts[fromBN(tradeResult.positionId)] }
-    //   })
-
-    //   await spreadOptionMarket.connect(trader1).closePosition(position.market, position.positionId, false, tradeResults);
-
-    //   const traderBalance = parseInt(fromBN(await sUSD.balanceOf(trader1.address)))
-    //   const endLPBalance = parseInt(fromBN(await sUSD.balanceOf(spreadLiquidityPool.address)))
-    //   const maxLossCollateralAfter = parseInt(fromBN(await sUSD.balanceOf(spreadMaxLossCollateral.address)));
-    //   const optionMarketAfterClose = parseInt(fromBN(await sUSD.balanceOf(spreadOptionMarket.address)));
-
-    //   console.log({
-    //     traderStart,
-    //     traderBalance,
-    //     endLPBalance,
-    //     maxLossCollateralAfter,
-    //     optionMarketAfterClose
-    //   })
-
-    //   // lp recovers funds 
-    //   expect(endLPBalance).to.be.greaterThanOrEqual(startLPBalance);
-    //   // max loss posted already but may need to recover fees form user
-    //   expect(traderBalance).to.be.greaterThan(traderBalanceBeforeClose);
-    //   expect(optionMarketAfterClose).to.be.eq(toBN('0'));
-    //   expect(maxLossCollateralAfter).to.be.eq(toBN('0'));
-
-    // });
-
   });
 
   describe("deposit into lp open and close part of a position after spot price moves significantly", () => {
@@ -1086,9 +1024,7 @@ describe("spread option market", async () => {
     before("set board id", async () => {
       const boards = await lyraTestSystem.optionMarket.getLiveBoards();
       boardId = boards[2];
-      console.log({ boardId, boards })
       await lyraTestSystem.optionGreekCache.updateBoardCachedGreeks(boardId);
-
       await lyraEvm.fastForward(600);
     })
 
@@ -1133,8 +1069,11 @@ describe("spread option market", async () => {
         0
       )
 
-      const strikeTrades: ITradeTypes.TradeInputParametersStruct[] = [strikeTrade1, strikeTrade2, strikeTrade3];
-      const tx = await spreadOptionMarket.connect(trader1).openPosition({ positionId: 0, market: MARKET_KEY_ETH }, strikeTrades, toBN('1780'));
+      const tx = await spreadOptionMarket.connect(trader1).openPosition(
+        { positionId: 0, market: MARKET_KEY_ETH },
+        [strikeTrade2, strikeTrade3],
+        [strikeTrade1],
+      );
 
       const rc = await tx.wait(); // 0ms, as tx is already confirmed
       const event = rc.events?.find(
@@ -1143,6 +1082,7 @@ describe("spread option market", async () => {
       // @ts-ignore
       const [
         trader,
+        positionId,
         sellResults,
         buyResults,
         totalCollateralToAdd, // borrowed
@@ -1234,6 +1174,17 @@ const buildOrderWithQuote = async (
     0, // open
     false // is force close
   );
+
+  const quote1 = await lyraBaseETH.getQuote(
+    strikeId,
+    1, // iterations
+    optionType, // option type
+    toBN('1'),
+    0, // open
+    false // is force close
+  );
+
+  console.log({ quote: fromBN(quote.totalPremium), quote1: fromBN(quote1.totalPremium) })
 
   const maxCostQuote = isLong(optionType) ?
     toBN((parseInt(fromBN(quote.totalPremium.add(quote.totalFee))) * 1.1).toString()) :

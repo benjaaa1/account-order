@@ -20,7 +20,7 @@ import {OptionMarketPricer} from "@lyrafinance/protocol/contracts/OptionMarketPr
 import {GWAVOracle} from "@lyrafinance/protocol/contracts/periphery/GWAVOracle.sol";
 
 import {SynthetixAdapter} from "@lyrafinance/protocol/contracts/SynthetixAdapter.sol";
-import {ILyraQuoter} from "./interfaces/ILyraQuoter.sol";
+import {ILyraQuoter} from "../interfaces/ILyraQuoter.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 
 /**

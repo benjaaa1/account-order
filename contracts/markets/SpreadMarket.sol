@@ -4,15 +4,18 @@ pragma solidity 0.8.9;
 import "hardhat/console.sol";
 
 // spread market contracts
-import {SpreadMaxLossCollateral} from "./SpreadMaxLossCollateral.sol";
-import {SpreadOptionToken} from "./SpreadOptionToken.sol";
-import {SpreadLiquidityPool} from "./SpreadLiquidityPool.sol";
+import {SpreadMaxLossCollateral} from "../pools/SpreadMaxLossCollateral.sol";
+import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
+import {SpreadLiquidityPool} from "../pools/SpreadLiquidityPool.sol";
 import {OptionToken} from "@lyrafinance/protocol/contracts/OptionToken.sol";
 import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
 
 // libraries
-import "./synthetix/SafeDecimalMath.sol";
-import "./synthetix/SignedDecimalMath.sol";
+import "../synthetix/SafeDecimalMath.sol";
+import "../synthetix/SignedDecimalMath.sol";
+import "../interfaces/IMaxLossCalculator.sol";
+import "../interfaces/ISettlementCalculator.sol";
+
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 // inherits
@@ -21,17 +24,17 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 
 // interfaces
-import "./interfaces/ILyraBase.sol";
-import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
+import "../interfaces/ILyraBase.sol";
+import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title SpreadOptionMarket
+ * @title SpreadMarket
  * @author Otus
- * @dev Trades, Validates and Settles Spread Options Positions on Lyra.
+ * @dev Trades, Validates and Settles Spread Options Positions on Lyra and Other platforms.
  */
-contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     using SafeDecimalMath for uint;
     using SignedDecimalMath for int;
 
@@ -39,9 +42,8 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      *  IMMUTABLES & CONSTANTS
      ***********************************************/
 
-    uint internal constant COLLATERAL_BUFFER = 1e18; // 100%
-    uint internal constant COLLATERAL_REQUIRED = 1e18; // 100% more tests required with lower required collateral
-    uint private constant ONE_PERCENT = 1e16;
+    uint internal constant COLLATERAL_BUFFER = 0; // 100%
+    uint internal constant COLLATERAL_REQUIRED = 5e17; // 100% more tests required with lower required collateral
 
     /************************************************
      *  INIT STATE
@@ -49,13 +51,17 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
     IERC20 public quoteAsset;
 
-    mapping(bytes32 => ILyraBase) public lyraBases;
+    mapping(bytes32 => ILyraBase) internal lyraBases;
 
     SpreadMaxLossCollateral internal spreadMaxLossCollateral;
 
-    SpreadOptionToken internal spreadOptionToken;
-
     SpreadLiquidityPool internal spreadLiquidityPool;
+
+    OtusOptionToken internal otusOptionToken;
+
+    address internal maxLossCalculator;
+
+    address internal settlementCalculator;
 
     /************************************************
      *  CONSTRUCTOR
@@ -74,24 +80,40 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @param _quoteAsset address used as margin asset (USDC / SUSD)
      * @param _ethLyraBase (lyra adapter for eth market)
      * @param _btcLyraBase (lyra adapter for btc market)
-     * @param _spreadOptionToken gelato ops address
-     * @param _spreadLiquidityPool gelato ops address
+     * @param _otusOptionToken option token address
+     * @param _spreadLiquidityPool liquidity pool address
+     * @param _maxLossCalculator max loss calculator address
      */
     function initialize(
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
         address _spreadMaxLossCollateral,
-        address _spreadOptionToken,
-        address _spreadLiquidityPool
+        address _otusOptionToken,
+        address _spreadLiquidityPool,
+        address _maxLossCalculator,
+        address _settlementCalculator
     ) external onlyOwner initializer {
         quoteAsset = IERC20(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
 
         spreadMaxLossCollateral = SpreadMaxLossCollateral(_spreadMaxLossCollateral);
-        spreadOptionToken = SpreadOptionToken(_spreadOptionToken);
+        otusOptionToken = OtusOptionToken(_otusOptionToken);
         spreadLiquidityPool = SpreadLiquidityPool(_spreadLiquidityPool);
+        maxLossCalculator = _maxLossCalculator;
+        settlementCalculator = _settlementCalculator;
+
+        address ethOptionMarket = lyraBase(bytes32("ETH")).getOptionMarket();
+
+        if (address(ethOptionMarket) != address(0)) {
+            quoteAsset.approve(address(ethOptionMarket), type(uint).max);
+        }
+
+        address btcOptionMarket = lyraBase(bytes32("BTC")).getOptionMarket();
+        if (address(btcOptionMarket) != address(0)) {
+            quoteAsset.approve(address(btcOptionMarket), type(uint).max);
+        }
     }
 
     /************************************************
@@ -101,46 +123,238 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     /**
      * @notice openPosition
      * @param _tradeInfo position and market info (0 if new position)
-     * @param _trades trades
-     * @param _maxLossPosted set by trader for spread position (maxloss + maxcost - premium expected + fee)
-     * @return positionId is a valid spread
-     * @return sellResults
-     * @return buyResults
+     * @param shortTrades trades
+     * @param longTrades trades
      */
     function openPosition(
         TradeInfo memory _tradeInfo,
-        TradeInputParameters[] memory _trades,
-        uint _maxLossPosted
-    )
-        external
-        nonReentrant
-        returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults)
-    {
+        TradeInputParameters[] memory shortTrades,
+        TradeInputParameters[] memory longTrades
+    ) external nonReentrant {
+        if ((shortTrades.length + longTrades.length) > 4) {
+            revert("NotValidTradeSize");
+        }
+
         // if increasing previous spreadposition id
         // there needs to be more validity checks
         // 1. check increase of tradeinputparemeters is equal across the trades
         if (_tradeInfo.positionId > 0) {
-            bool isValidIncrease = validIncrease(_trades);
+            bool isValidIncrease = validIncrease(shortTrades, longTrades);
             if (!isValidIncrease) {
-                revert NotValidIncrease(_trades);
-                // check if lyra position id exists in spread position id
+                revert("NotValidIncrease");
             }
         }
 
         // check validity of spread
-        (bool isValid, uint totalSells) = validSpread(_trades);
+        bool isValid = validSpread(shortTrades, longTrades);
 
         if (!isValid) {
-            revert NotValidSpread(_trades);
+            revert("NotValidSpread");
         }
 
-        (positionId, sellResults, buyResults) = _openPosition(_tradeInfo, _trades, totalSells, _maxLossPosted);
+        // @todo bug when calculating max loss for multiple amounts
+        // @dev currently if you send maxTotalCost for longs it can be set to a large amount
+        // trades are made and vali
+        uint maxLoss = validMaxLoss(_tradeInfo.market, shortTrades, longTrades);
+        // routes to this market => then routes to lyra option market
+        _routeCostsFromUser(maxLoss);
+
+        _openPosition(_tradeInfo, shortTrades, longTrades, maxLoss);
+    }
+
+    function _calculateFees(
+        bytes32 _market,
+        uint _totalCollateralToAdd,
+        TradeResult[] memory _sellResults
+    ) internal returns (uint fee) {
+        uint shortExpiry;
+        TradeResult memory result;
+
+        ILyraBase _lyraBase = lyraBase(_market);
+
+        for (uint i = 0; i < _sellResults.length; i++) {
+            result = _sellResults[i];
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
+            shortExpiry = shortExpiry > strike.expiry ? shortExpiry : strike.expiry;
+        }
+
+        fee = _calculateFeesAndRouteFundsFromUser(_totalCollateralToAdd, shortExpiry);
+    }
+
+    /**
+     * @notice Execute Trades on Lyra, borrow from LP, with user fees transfer
+     * @param _tradeInfo position and market info (0 if new position)
+     * @param shortTrades trades info
+     * @param longTrades trades info
+     * @param maxLoss max loss of position
+     */
+    function _openPosition(
+        TradeInfo memory _tradeInfo,
+        TradeInputParameters[] memory shortTrades,
+        TradeInputParameters[] memory longTrades,
+        uint maxLoss
+    ) internal {
+        TradeResult[] memory sellResults;
+        TradeResult[] memory buyResults;
+        uint actualCost;
+        uint premiumReceived;
+        // total collateral required
+        (uint totalCollateralToAdd, uint totalSetCollateralTo) = _getTotalRequiredCollateral(
+            _tradeInfo.market,
+            shortTrades
+        );
+
+        /// @dev route collateral from liquidity pool
+        _routeLPFundsForCollateral(totalCollateralToAdd);
+
+        (actualCost, premiumReceived, sellResults, buyResults) = _executeTrade(
+            _tradeInfo.market,
+            shortTrades,
+            longTrades
+        );
+
+        /// @todo route collateral fee from trader
+        uint fee;
+        if (totalCollateralToAdd > 0) {
+            fee = _calculateFees(_tradeInfo.market, totalCollateralToAdd, sellResults);
+        }
+
+        // will be more than 0 if successfull trades have processed
+        uint maxLossPostedCollateral = maxLoss + premiumReceived - actualCost;
+        if (maxLossPostedCollateral > 0) {
+            _routeMaxLossCollateralFromMarket(maxLossPostedCollateral);
+        }
+
+        uint positionId = otusOptionToken.openPosition(
+            _tradeInfo,
+            msg.sender,
+            sellResults,
+            buyResults,
+            totalSetCollateralTo, // same as totalCollateralToAdd on new opens
+            maxLossPostedCollateral
+        );
+
+        emit Trade(
+            msg.sender,
+            positionId,
+            sellResults,
+            buyResults,
+            totalCollateralToAdd, // borrowed
+            actualCost,
+            fee,
+            TradeType.SPREAD
+        );
+    }
+
+    /**
+     * @notice executes and routes funds from lp and to lyra option market
+     * @param _market eth / btc
+     * @param shortTrades trades
+     * @param longTrades trades
+     * @return actualCost cost of trade
+     * @return premiumReceived premium received from trade
+     * @return sellResults results from selling
+     * @return buyResults results from buying
+     */
+    function _executeTrade(
+        bytes32 _market,
+        TradeInputParameters[] memory shortTrades,
+        TradeInputParameters[] memory longTrades
+    )
+        internal
+        returns (
+            uint actualCost,
+            uint premiumReceived,
+            TradeResult[] memory sellResults,
+            TradeResult[] memory buyResults
+        )
+    {
+        (sellResults, premiumReceived) = _sellStrikes(_market, shortTrades);
+
+        (buyResults, actualCost) = _buyStrikes(_market, longTrades);
+    }
+
+    /**
+     * @notice Executes Buys
+     * @param _longTrades Long trade info
+     * @return results
+     */
+    function _buyStrikes(
+        bytes32 _market,
+        TradeInputParameters[] memory _longTrades
+    ) private returns (TradeResult[] memory results, uint cost) {
+        results = new TradeResult[](_longTrades.length);
+        address optionMarket = lyraBase(_market).getOptionMarket();
+
+        for (uint i = 0; i < _longTrades.length; i++) {
+            TradeInputParameters memory trade = _longTrades[i];
+
+            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+
+            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
+
+            if (result.totalCost > trade.maxTotalCost) {
+                revert PremiumAboveExpected(result.totalCost, trade.maxTotalCost);
+            }
+
+            results[i] = TradeResult({
+                market: _market,
+                positionId: result.positionId,
+                totalCost: result.totalCost,
+                totalFee: result.totalFee,
+                optionType: trade.optionType,
+                amount: trade.amount,
+                setCollateralTo: trade.setCollateralTo,
+                strikeId: trade.strikeId
+            });
+
+            cost += result.totalCost;
+        }
+    }
+
+    /**
+     * @notice Executes Buys
+     * @param _shortTrades short trade info
+     * @return results
+     */
+    function _sellStrikes(
+        bytes32 _market,
+        TradeInputParameters[] memory _shortTrades
+    ) private returns (TradeResult[] memory results, uint premiumCollected) {
+        address optionMarket = lyraBase(_market).getOptionMarket();
+
+        results = new TradeResult[](_shortTrades.length);
+
+        for (uint i = 0; i < _shortTrades.length; i++) {
+            TradeInputParameters memory trade = _shortTrades[i];
+
+            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+
+            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
+
+            if (result.totalCost < trade.minTotalCost) {
+                revert PremiumBelowExpected(result.totalCost, trade.minTotalCost);
+            }
+
+            results[i] = TradeResult({
+                market: _market,
+                positionId: result.positionId,
+                totalCost: result.totalCost,
+                totalFee: result.totalFee,
+                optionType: trade.optionType,
+                amount: trade.amount,
+                setCollateralTo: trade.setCollateralTo,
+                strikeId: trade.strikeId
+            });
+
+            premiumCollected += result.totalCost;
+        }
     }
 
     /**
      * @notice Handle all settlement between user/spreadoptionmarket/liquidity pool
      * @param _market btc / eth
-     * @param _spreadPositionId SpreadOptionToken.SpreadOptionPosition positionId
+     * @param _spreadPositionId otusOptionToken.OtusOptionPosition positionId
      * @param _params need to have max cost for close data and strikeid
      * @dev Trader must close all positions on lyra and then settles position on otus option market
      * @dev to do - or they can close equal amounts on all
@@ -157,17 +371,14 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
             _params
         );
 
+        /// @todo add a closeSpreadPosition on optionToken to close spread positions
+        /// why not use closePosition on partial sum == 0
+
         if (partialSum == 0) {
-            spreadOptionToken.settlePosition(_spreadPositionId);
+            otusOptionToken.settlePosition(_spreadPositionId);
         } else {
             // update spread opition token position adjust
-            spreadOptionToken.closePosition(
-                msg.sender,
-                partialSum,
-                _spreadPositionId,
-                sellCloseResults,
-                buyCloseResults
-            );
+            otusOptionToken.closePosition(msg.sender, partialSum, _spreadPositionId, sellCloseResults, buyCloseResults);
         }
     }
 
@@ -177,7 +388,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         uint _spreadPositionId,
         TradeInputParameters[] memory _trades
     ) internal returns (uint partialSum, TradeResult[] memory sellCloseResults, TradeResult[] memory buyCloseResults) {
-        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
+        OtusOptionToken.OtusOptionPosition memory position = otusOptionToken.getPosition(_spreadPositionId);
 
         if (position.trader != msg.sender) {
             // only owner can close before settlement
@@ -208,7 +419,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
 
     function _executeCloseTrade(
         bytes32 _market,
-        SpreadOptionToken.SpreadOptionPosition memory position,
+        OtusOptionToken.OtusOptionPosition memory position,
         TradeInputParameters[] memory _params,
         TradeInputParameters[] memory shortTrades,
         TradeInputParameters[] memory longTrades
@@ -353,204 +564,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    /**
-     * @notice Execute Trades on Lyra, borrow from LP, with user fees transfer
-     * @param _tradeInfo position and market info (0 if new position)
-     * @param _trades trades info
-     * @param totalSells total sell strike trades counter
-     * @param _maxLossPosted max cost set by trader
-     * @return positionId spread option position id
-     */
-    function _openPosition(
-        TradeInfo memory _tradeInfo,
-        TradeInputParameters[] memory _trades,
-        uint totalSells,
-        uint _maxLossPosted
-    ) internal returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) {
-        (TradeInputParameters[] memory shortTrades, TradeInputParameters[] memory longTrades) = buildTrades(
-            _trades,
-            totalSells
-        );
-
-        // total collateral required
-        (uint totalCollateralToAdd, uint totalSetCollateralTo) = _getTotalRequiredCollateral(
-            _tradeInfo.market,
-            shortTrades
-        );
-
-        uint _maxLossPostedCollateral;
-
-        (sellResults, buyResults, _maxLossPostedCollateral) = _executeTrade(
-            _tradeInfo.market,
-            totalCollateralToAdd,
-            _maxLossPosted,
-            shortTrades,
-            longTrades
-        );
-
-        positionId = spreadOptionToken.openPosition(
-            _tradeInfo,
-            msg.sender,
-            sellResults,
-            buyResults,
-            totalSetCollateralTo, // same as totalCollateralToAdd on new opens
-            _maxLossPostedCollateral
-        );
-    }
-
-    /**
-     * @notice executes and routes funds from lp and to lyra option market
-     * @param _market eth / btc
-     * @param _totalCollateralToAdd collateral to be borrowed from liquidity pool
-     * @param _maxLossPosted max loss posted by user including (collateral loss cover + costs + fees) and excluding premiums
-     * @param shortTrades trades
-     * @param longTrades trades
-     * @return sellResults results from selling
-     * @return buyResults results from buying
-     */
-    function _executeTrade(
-        bytes32 _market,
-        uint _totalCollateralToAdd,
-        uint _maxLossPosted,
-        TradeInputParameters[] memory shortTrades,
-        TradeInputParameters[] memory longTrades
-    )
-        internal
-        returns (TradeResult[] memory sellResults, TradeResult[] memory buyResults, uint maxLossPostedCollateral)
-    {
-        uint actualCost;
-        uint maxCost;
-        uint fee;
-        uint premiumCollected;
-        /// @dev route collateral from liquidity pool
-        _routeLPFundsForCollateral(_totalCollateralToAdd);
-
-        (sellResults, premiumCollected) = _sellStrikes(_market, shortTrades);
-
-        /// @dev routes max cost to option market from trader
-        /// @dev maxcost - actualcost is sent back to trader
-        /// @dev routing is done in _buyStrikes
-        (buyResults, actualCost, maxCost) = _buyStrikes(_market, longTrades);
-
-        // fee is calcualted and transferred separately
-        maxLossPostedCollateral = _maxLossPosted + premiumCollected - actualCost;
-
-        uint maxLossCollateralRequirement = validMaxLossAndExpiries(
-            _market,
-            sellResults,
-            buyResults,
-            _totalCollateralToAdd
-        );
-
-        if (maxLossCollateralRequirement > maxLossPostedCollateral) {
-            revert MaxLossRequirementNotMet(maxLossCollateralRequirement, _maxLossPosted);
-        }
-
-        /// @dev route max loss to short collateral
-        /// @dev no need to ask for premiumCollected from user again
-        /// @dev maxcost + maxloss - premium = maxlosscollateral needed
-        _routeMaxLossCollateralFromTrader(maxLossPostedCollateral - premiumCollected);
-        _routeMaxLossCollateralFromMarket(premiumCollected);
-
-        emit Trade(
-            msg.sender,
-            sellResults,
-            buyResults,
-            _totalCollateralToAdd, // borrowed
-            actualCost,
-            fee
-        );
-    }
-
-    /**
-     * @notice Executes Buys
-     * @param _longTrades Long trade info
-     * @return results
-     */
-    function _buyStrikes(
-        bytes32 _market,
-        TradeInputParameters[] memory _longTrades
-    ) private returns (TradeResult[] memory results, uint actualCost, uint maxCost) {
-        maxCost = _maxCost(_longTrades);
-
-        // routes to this market => then routes to lyra option market
-        _routeCostsFromUser(maxCost);
-
-        results = new TradeResult[](_longTrades.length);
-        address optionMarket = lyraBase(_market).getOptionMarket();
-        quoteAsset.approve(address(optionMarket), type(uint).max);
-
-        for (uint i = 0; i < _longTrades.length; i++) {
-            TradeInputParameters memory trade = _longTrades[i];
-
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
-
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
-
-            if (result.totalCost > trade.maxTotalCost) {
-                revert PremiumAboveExpected(result.totalCost, trade.maxTotalCost);
-            }
-
-            results[i] = TradeResult({
-                market: _market,
-                positionId: result.positionId,
-                totalCost: result.totalCost,
-                totalFee: result.totalFee,
-                optionType: trade.optionType,
-                amount: trade.amount,
-                setCollateralTo: trade.setCollateralTo,
-                strikeId: trade.strikeId
-            });
-
-            actualCost += result.totalCost;
-        }
-
-        /// @dev return difference in actual cost from max cost set
-        if (maxCost > actualCost) {
-            _routeExtraBackToUser(maxCost, actualCost);
-        }
-    }
-
-    /**
-     * @notice Executes Buys
-     * @param _shortTrades short trade info
-     * @return results
-     */
-    function _sellStrikes(
-        bytes32 _market,
-        TradeInputParameters[] memory _shortTrades
-    ) private returns (TradeResult[] memory results, uint premiumCollected) {
-        address optionMarket = lyraBase(_market).getOptionMarket();
-        quoteAsset.approve(address(optionMarket), type(uint).max);
-
-        results = new TradeResult[](_shortTrades.length);
-
-        for (uint i = 0; i < _shortTrades.length; i++) {
-            TradeInputParameters memory trade = _shortTrades[i];
-
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
-
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
-
-            if (result.totalCost < trade.minTotalCost) {
-                revert PremiumBelowExpected(result.totalCost, trade.minTotalCost);
-            }
-
-            results[i] = TradeResult({
-                market: _market,
-                positionId: result.positionId,
-                totalCost: result.totalCost,
-                totalFee: result.totalFee,
-                optionType: trade.optionType,
-                amount: trade.amount,
-                setCollateralTo: trade.setCollateralTo,
-                strikeId: trade.strikeId
-            });
-
-            premiumCollected += result.totalCost;
-        }
-    }
-
     /************************************************
      *  UTILS - TRADE EXECUTION
      ***********************************************/
@@ -575,145 +588,33 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    // @dev helper method to sum up max cost limit of long trades
-    function _maxCost(TradeInputParameters[] memory _trades) internal pure returns (uint maxCost) {
-        for (uint i = 0; i < _trades.length; i++) {
-            if (_isLong(_trades[i].optionType)) {
-                maxCost += _trades[i].maxTotalCost;
-            }
-        }
-    }
-
     /************************************************
      *  SETTLEMENT
      ***********************************************/
     /**
      * @notice Settles positions in spread option market
      * @dev Only settles if all lyra positions are settled
-     * @param _spreadPositionId position id in SpreadOptionToken
+     * @param _spreadPositionId position id in OtusOptionToken
      */
     function settleOption(uint _spreadPositionId) external nonReentrant {
-        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
+        OtusOptionToken.OtusOptionPosition memory position = otusOptionToken.getPosition(_spreadPositionId);
 
         // reverts if positions are not settled in lyra
-        SpreadOptionToken.SettledPosition[] memory optionPositions = spreadOptionToken.checkLyraPositionsSettled(
+        OtusOptionToken.SettledPosition[] memory optionPositions = otusOptionToken.checkLyraPositionsSettled(
             _spreadPositionId
         );
 
-        spreadOptionToken.settlePosition(_spreadPositionId);
+        otusOptionToken.settlePosition(_spreadPositionId);
 
-        uint totalLPSettlementAmount; // totalPendingCollateral
-        uint totalLPLossToBeRecovered; // collateralToRecover
-        uint traderSettlementAmount; // traderProfit
-        uint totalCollateral;
+        (
+            uint totalLPSettlementAmount, // totalPendingCollateral
+            uint traderSettlementAmount, // traderProfit
+            uint totalCollateral
+        ) = ISettlementCalculator(settlementCalculator).calculate(optionPositions);
 
-        for (uint i = 0; i < optionPositions.length; i++) {
-            SpreadOptionToken.SettledPosition memory settledPosition = optionPositions[i];
-
-            if (settledPosition.optionType == OptionMarket.OptionType.LONG_CALL) {
-                traderSettlementAmount =
-                    traderSettlementAmount +
-                    _calculateLongCallProceeds(
-                        settledPosition.amount,
-                        settledPosition.strikePrice,
-                        settledPosition.priceAtExpiry
-                    );
-            } else if (settledPosition.optionType == OptionMarket.OptionType.LONG_PUT) {
-                traderSettlementAmount =
-                    traderSettlementAmount +
-                    _calculateLongPutProceeds(
-                        settledPosition.amount,
-                        settledPosition.strikePrice,
-                        settledPosition.priceAtExpiry
-                    );
-            } else if (settledPosition.optionType == OptionMarket.OptionType.SHORT_CALL_QUOTE) {
-                (uint collateralSettlementAmount, uint lpLoss) = _calculateShortCallProceeds(
-                    settledPosition.collateral,
-                    settledPosition.amount,
-                    settledPosition.strikePrice,
-                    settledPosition.priceAtExpiry
-                );
-                totalLPSettlementAmount = totalLPSettlementAmount + collateralSettlementAmount;
-                totalLPLossToBeRecovered = totalLPLossToBeRecovered + lpLoss;
-                totalCollateral += settledPosition.collateral;
-            } else if (settledPosition.optionType == OptionMarket.OptionType.SHORT_PUT_QUOTE) {
-                // to be recovered (lploss)
-                (uint collateralSettlementAmount, uint lpLoss) = _calculateShortPutProceeds(
-                    settledPosition.collateral,
-                    settledPosition.amount,
-                    settledPosition.strikePrice,
-                    settledPosition.priceAtExpiry
-                );
-                totalLPSettlementAmount = totalLPSettlementAmount + collateralSettlementAmount;
-                totalLPLossToBeRecovered = totalLPLossToBeRecovered + lpLoss;
-                totalCollateral += settledPosition.collateral;
-            }
-        }
-
-        // @dev totalLPLossToBeRecovered - funds not returned from collateral locked
         // @dev totalLPSettlementAmount - collateral returned
         // @dev traderSettlementAmount usually when loss there is a profit
         _routeFundsOnClose(position, 0, traderSettlementAmount, totalCollateral, totalLPSettlementAmount);
-    }
-
-    /// @dev spread option state
-    function getOptionStatus(uint _spreadPositionId) public view returns (PositionState state) {
-        SpreadOptionToken.SpreadOptionPosition memory position = spreadOptionToken.getPosition(_spreadPositionId);
-        return position.state;
-    }
-
-    /// @dev calculates profit made by a long call
-    function _calculateLongCallProceeds(
-        uint _amount,
-        uint _strikePrice,
-        uint _priceAtExpiry
-    ) internal pure returns (uint settlementAmount) {
-        settlementAmount = (_priceAtExpiry > _strikePrice)
-            ? (_priceAtExpiry - _strikePrice).multiplyDecimal(_amount)
-            : 0;
-        return settlementAmount;
-    }
-
-    /// @dev calculates profit made by a long put
-    function _calculateLongPutProceeds(
-        uint _amount,
-        uint _strikePrice,
-        uint _priceAtExpiry
-    ) internal pure returns (uint settlementAmount) {
-        settlementAmount = (_strikePrice > _priceAtExpiry)
-            ? (_strikePrice - _priceAtExpiry).multiplyDecimal(_amount)
-            : 0;
-        return settlementAmount;
-    }
-
-    /// @dev calculates collateral settlement and collateral loss made by a short call
-    /// @dev liquidityPoolLoss priceAtExpiry - strikePrice = liquidity pool loss
-    function _calculateShortCallProceeds(
-        uint _collateral,
-        uint _amount,
-        uint _strikePrice,
-        uint _priceAtExpiry
-    ) internal pure returns (uint collateralSettlementAmount, uint liquidityPoolLoss) {
-        // liquidity pool loss (ammProfit)
-        liquidityPoolLoss = (_priceAtExpiry > _strikePrice)
-            ? (_priceAtExpiry - _strikePrice).multiplyDecimal(_amount)
-            : 0;
-
-        collateralSettlementAmount = _collateral - liquidityPoolLoss;
-    }
-
-    /// @dev calculates collateral settlement and collateral loss made by a short put
-    /// @dev liquidityPoolLoss strikePrice - priceAtExpiry = liquidity pool loss
-    function _calculateShortPutProceeds(
-        uint _collateral,
-        uint _amount,
-        uint _strikePrice,
-        uint _priceAtExpiry
-    ) internal pure returns (uint collateralSettlementAmount, uint liquidityPoolLoss) {
-        liquidityPoolLoss = (_priceAtExpiry < _strikePrice)
-            ? (_strikePrice - _priceAtExpiry).multiplyDecimal(_amount)
-            : 0;
-        collateralSettlementAmount = _collateral - liquidityPoolLoss;
     }
 
     /************************************************
@@ -729,7 +630,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @dev include a fee on profit and partial close
      */
     function _routeFundsOnClose(
-        SpreadOptionToken.SpreadOptionPosition memory position,
+        OtusOptionToken.OtusOptionPosition memory position,
         uint partialSum,
         uint totalTraderProfit,
         uint totalCollateral,
@@ -786,7 +687,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         );
 
         if (amountInsolvent < 0) {
-            emit LPInsolvent(uint(-amountInsolvent));
+            emit LPInsolvent(_abs(amountInsolvent));
         }
     }
 
@@ -799,11 +700,11 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     ) internal returns (int amountInsolvent) {
         if (fundsAfterMaxLossCollateralCover > 0) {
             // send to trader from max loss collateral
-            _routeMaxLossCollateralToTrader(_trader, SafeDecimalMath.UNIT, uint(fundsAfterMaxLossCollateralCover));
-            _routeFundsToTrader(_trader, uint(traderTotal));
+            _routeMaxLossCollateralToTrader(_trader, SafeDecimalMath.UNIT, _abs(fundsAfterMaxLossCollateralCover));
+            _routeFundsToTrader(_trader, _abs(traderTotal));
         } else {
-            _routeCollateralToLP(uint(-fundsAfterMaxLossCollateralCover));
-            _routeFundsToTrader(_trader, uint(traderTotal + fundsAfterMaxLossCollateralCover));
+            _routeCollateralToLP(_abs(fundsAfterMaxLossCollateralCover));
+            _routeFundsToTrader(_trader, _abs(traderTotal + fundsAfterMaxLossCollateralCover));
 
             amountInsolvent = fundsAfterMaxLossCollateralCover + traderTotal;
         }
@@ -840,17 +741,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     }
 
     /**
-     * @notice transfers additional collateral required to close from trader
-     */
-    function _routeCollateralToLPFromUser(uint _amount) internal {
-        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), _amount)) {
-            revert TransferFundsFromTraderFailed(msg.sender, _amount);
-        }
-
-        spreadLiquidityPool.freeLockedLiquidity(_amount);
-    }
-
-    /**
      * @notice Transfer funds from LP to this contract
      * @param _amount total collateral requested
      */
@@ -880,28 +770,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    function _routeExtraBackToUser(uint __maxCost, uint _actualCost) internal {
-        if (!quoteAsset.transfer(msg.sender, __maxCost - _actualCost)) {
-            revert TransferFundsToTraderFailed(msg.sender, __maxCost - _actualCost);
-        }
-    }
-
-    function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal {
-        uint fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
-        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
-            revert TransferFundsFromTraderFailed(msg.sender, fee);
-        }
-    }
-
-    /**
-     * @notice transfer funds from trader to max loss
-     */
-    function _routeMaxLossCollateralFromTrader(uint _amount) internal {
-        if (!quoteAsset.transferFrom(msg.sender, address(spreadMaxLossCollateral), _amount)) {
-            revert TransferFundsFromTraderFailed(msg.sender, _amount);
-        }
-    }
-
     /**
      * @notice Routes collateral back to trader on close or settlement
      * @dev rewrite this to make calculation outside
@@ -924,160 +792,93 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    /************************************************
-     *  CAULCULATE FEES
-     ***********************************************/
-
-    function stakeLyra(uint) external {
-        // transfer lyra to this
-        // stkLyraOtus token needs to be minted for accounting
-        // Trading rewards
-        // https://app.lyra.finance/#/rewards/trading/optimism 47.5% fee rebate for 100,000
+    function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal returns (uint fee) {
+        fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
+        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
+            revert TransferFundsFromTraderFailed(msg.sender, fee);
+        }
     }
 
     /************************************************
      *  VALIDATE SPREAD TRADE
      ***********************************************/
-    /**
-     * @notice Sums up max loss for each side of spread
-     * @dev This validation is run after validSpread checks
-     * @param _market market
-     * @param _sellResults results from buys
-     * @param _buyResults results from buys
-     */
-    function validMaxLossAndExpiries(
+
+    function validMaxLoss(
         bytes32 _market,
-        TradeResult[] memory _sellResults,
-        TradeResult[] memory _buyResults,
-        uint _totalCollateralToAdd
-    ) internal returns (uint maxLoss) {
-        TradeResult memory result;
-        int maxLossCall;
-        int maxLossPut;
-        uint shortExpiry;
-        uint longExpiry;
+        TradeInputParameters[] memory _shortTrades,
+        TradeInputParameters[] memory _longTrades
+    ) public view returns (uint maxLoss) {
+        TradeInputParameters memory trade;
+        IMaxLossCalculator.Strike[] memory strikes = new IMaxLossCalculator.Strike[](
+            _shortTrades.length + _longTrades.length
+        );
 
         ILyraBase _lyraBase = lyraBase(_market);
 
-        if (_sellResults.length == 0) {
-            return (0);
+        for (uint i = 0; i < _shortTrades.length; i++) {
+            trade = _shortTrades[i];
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(trade.strikeId);
+
+            strikes[i] = IMaxLossCalculator.Strike({
+                strikePrice: strike.strikePrice,
+                amount: trade.amount,
+                premium: trade.minTotalCost,
+                optionType: trade.optionType
+            });
         }
 
-        uint shortCallCount;
-        uint shortPutCount;
-
-        for (uint i = 0; i < _sellResults.length; i++) {
-            result = _sellResults[i];
-
-            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
-
-            int strikePriceTotal = SafeCast.toInt256(strike.strikePrice.multiplyDecimal(result.amount));
-
-            if (_isCall(result.optionType)) {
-                maxLossCall = maxLossCall - strikePriceTotal;
-                shortCallCount += result.amount; // add amount
-            } else {
-                maxLossPut = maxLossPut - strikePriceTotal;
-                shortPutCount += result.amount;
-            }
-
-            shortExpiry = shortExpiry > strike.expiry ? shortExpiry : strike.expiry;
+        for (uint i = 0; i < _longTrades.length; i++) {
+            trade = _longTrades[i];
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(trade.strikeId);
+            strikes[_shortTrades.length + i] = IMaxLossCalculator.Strike({
+                strikePrice: strike.strikePrice,
+                amount: trade.amount,
+                premium: trade.maxTotalCost,
+                optionType: trade.optionType
+            });
         }
-
-        uint longCallCount;
-        uint longPutCount;
-
-        for (uint i = 0; i < _buyResults.length; i++) {
-            result = _buyResults[i];
-
-            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
-
-            uint strikePrice = strike.strikePrice;
-            int strikePriceTotal = SafeCast.toInt256(strike.strikePrice.multiplyDecimal(result.amount));
-
-            if (_isCall(result.optionType)) {
-                longCallCount += result.amount;
-                if (longCallCount <= shortCallCount) {
-                    maxLossCall = maxLossCall + strikePriceTotal;
-                    shortCallCount -= longCallCount;
-                } else if (maxLossCall > 0) {
-                    maxLossCall =
-                        maxLossCall +
-                        SafeCast.toInt256(strikePrice.multiplyDecimal(longCallCount - shortCallCount));
-                }
-            } else {
-                longPutCount += result.amount;
-                if (longPutCount <= shortPutCount) {
-                    maxLossPut = maxLossPut + strikePriceTotal;
-                    shortPutCount -= longPutCount;
-                } else {
-                    maxLossPut =
-                        maxLossPut +
-                        SafeCast.toInt256(strikePrice.multiplyDecimal(longPutCount - shortPutCount));
-                }
-            }
-
-            longExpiry = longExpiry > strike.expiry ? longExpiry : strike.expiry;
-        }
-
-        if (longExpiry > 0 && longExpiry < shortExpiry) {
-            revert InvalidLongExpiry(longExpiry, shortExpiry);
-        }
-
-        if (maxLossCall < 0) {
-            maxLossCall = 0;
-        }
-
-        /// @dev route fees from user to lp (calculate to )
-        if (_totalCollateralToAdd > 0) {
-            _calculateFeesAndRouteFundsFromUser(_totalCollateralToAdd, shortExpiry);
-        }
-
-        // expiry = shortExpiry;
-        maxLoss = _abs(maxLossCall) > _abs(maxLossPut) ? _abs(maxLossCall) : _abs(maxLossPut);
+        maxLoss = IMaxLossCalculator(maxLossCalculator).calculate(strikes);
     }
 
     /**
      * @notice validates equal sizes
-     * @param _trades trades
+     * @param _shortTrades trades
+     * @param _longTrades trades
      * @return isValid is a valid spread
-     * @return totalSells total trades
      */
-    function validSpread(TradeInputParameters[] memory _trades) public pure returns (bool isValid, uint totalSells) {
-        uint tradesLen = _trades.length;
+    function validSpread(
+        TradeInputParameters[] memory _shortTrades,
+        TradeInputParameters[] memory _longTrades
+    ) public pure returns (bool) {
+        uint shortTradesLen = _shortTrades.length;
+        uint longTradesLen = _longTrades.length;
+
+        uint shortTradesAmount;
+        uint longTradesAmount;
+
+        for (uint i = 0; i < shortTradesLen; i++) {
+            shortTradesAmount += _shortTrades[i].amount;
+        }
+
+        for (uint i = 0; i < longTradesLen; i++) {
+            longTradesAmount += _longTrades[i].amount;
+        }
+
+        if (shortTradesAmount > longTradesAmount) {
+            // not a valid spread
+            return false;
+        }
+
         TradeInputParameters memory trade;
 
-        uint buyCallAmount;
-        uint sellCallAmount;
-        uint buyPutAmount;
-        uint sellPutAmount;
-        uint sells;
-
-        for (uint i = 0; i < tradesLen; i++) {
-            trade = _trades[i];
-
-            if (OptionType(trade.optionType) == OptionType.LONG_CALL) {
-                buyCallAmount = buyCallAmount + trade.amount;
-            } else if (OptionType(trade.optionType) == OptionType.SHORT_CALL_QUOTE) {
-                sellCallAmount = sellCallAmount + trade.amount;
-                sells++;
-            } else if (OptionType(trade.optionType) == OptionType.LONG_PUT) {
-                buyPutAmount = buyPutAmount + trade.amount;
-            } else if (OptionType(trade.optionType) == OptionType.SHORT_PUT_QUOTE) {
-                sellPutAmount = sellPutAmount + trade.amount;
-                sells++;
+        for (uint i = 0; i < shortTradesLen; i++) {
+            trade = _shortTrades[i];
+            if (_isLong(trade.optionType)) {
+                return false;
             }
         }
 
-        if (buyCallAmount < sellCallAmount) {
-            return (false, 0);
-        }
-
-        if (buyPutAmount < sellPutAmount) {
-            return (false, 0);
-        }
-
-        return (true, sells);
+        return true;
     }
 
     /**
@@ -1086,11 +887,24 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      * @dev must have a lyra position id
      * @dev last example would pass validIncrease check but wouldn't pass validSpread (even if it might be valid)
      * @dev must also have position ids set
-     * @param _trades trades
+     * @param _shortTrades trades
+     * @param _longTrades trades
      */
-    function validIncrease(TradeInputParameters[] memory _trades) internal pure returns (bool) {
-        for (uint i = 0; i < _trades.length; i++) {
-            TradeInputParameters memory trade = _trades[i];
+    function validIncrease(
+        TradeInputParameters[] memory _shortTrades,
+        TradeInputParameters[] memory _longTrades
+    ) internal pure returns (bool) {
+        TradeInputParameters memory trade;
+        for (uint i = 0; i < _shortTrades.length; i++) {
+            trade = _shortTrades[i];
+            if (trade.positionId == 0) {
+                // should have lyra position id
+                return false;
+            }
+        }
+
+        for (uint i = 0; i < _longTrades.length; i++) {
+            trade = _longTrades[i];
             if (trade.positionId == 0) {
                 // should have lyra position id
                 return false;
@@ -1143,6 +957,16 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
             pricing.tradeDirection, // 0 open 1 close 2 liquidate
             pricing.forceClose
         );
+    }
+
+    /************************************************
+     *  UTILS
+     ***********************************************/
+
+    /// @dev spread option state
+    function getOptionStatus(uint _spreadPositionId) public view returns (PositionState state) {
+        OtusOptionToken.OtusOptionPosition memory position = otusOptionToken.getPosition(_spreadPositionId);
+        return position.state;
     }
 
     /************************************************
@@ -1245,7 +1069,7 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
         }
     }
 
-    function _isCall(uint _optionType) public pure returns (bool isCall) {
+    function _isCall(uint _optionType) internal pure returns (bool isCall) {
         if (OptionType(_optionType) == OptionType.LONG_CALL || OptionType(_optionType) == OptionType.SHORT_CALL_QUOTE) {
             isCall = true;
         }
@@ -1297,15 +1121,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
      *  EVENTS
      ***********************************************/
     /// @dev
-    event Trade(
-        address indexed trader,
-        TradeResult[] sellResults,
-        TradeResult[] buyResults,
-        uint totalCollateralToAdd, // borrowed
-        uint fee,
-        uint maxCost
-    );
-
     event LPInsolvent(uint amountInsolvent);
 
     /************************************************
@@ -1320,10 +1135,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     error InvalidLongCallExpiry(uint longCallExpiry, uint shortCallExpiry);
 
     error InvalidLongPutExpiry(uint longPutExpiry, uint shortPutExpiry);
-
-    /// @notice cannot execute invalid order
-    /// @param _trades trades attempted
-    error NotValidSpread(TradeInputParameters[] _trades);
 
     /// @notice failed single market check
     /// @param _trades trades attempted
@@ -1362,11 +1173,6 @@ contract SpreadOptionMarket is Ownable, SimpleInitializeable, ReentrancyGuard, I
     /// @param thrower attempted by
     /// @param trader owned by
     error OnlyOwnerCanClose(address thrower, address trader);
-
-    /// @notice posted less than calculated
-    /// @param requiredMaxLossPost calculated
-    /// @param maxLossPosted posted by user
-    error MaxLossRequirementNotMet(uint requiredMaxLossPost, uint maxLossPosted);
 
     /// @notice max loss collateral transfer failed during trade
     /// @param thrower address of owner

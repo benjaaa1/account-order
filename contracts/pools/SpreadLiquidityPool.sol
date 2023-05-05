@@ -5,12 +5,12 @@ import "hardhat/console.sol";
 
 // libraries
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./synthetix/DecimalMath.sol";
+import "../synthetix/DecimalMath.sol";
 
 // inherits
 
 // spread option market
-import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
+import {SpreadMarket} from "../markets/SpreadMarket.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -79,7 +79,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      *  INIT STATE
      ***********************************************/
 
-    SpreadOptionMarket public spreadOptionMarket;
+    SpreadMarket public spreadMarket;
 
     // @dev Collateral
     ERC20 public quoteAsset;
@@ -109,8 +109,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      ***********************************************/
 
     modifier onlySpreadOptionMarket() {
-        if (msg.sender != address(spreadOptionMarket)) {
-            revert OnlySpreadOptionMarket(address(this), msg.sender, address(spreadOptionMarket));
+        if (msg.sender != address(spreadMarket)) {
+            revert OnlySpreadOptionMarket(address(this), msg.sender, address(spreadMarket));
         }
         _;
     }
@@ -126,10 +126,10 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      ***********************************************/
     /**
      * @notice initialize users account
-     * @param _spreadOptionMarket SpreadOptionMarket
+     * @param _spreadOptionMarket SpreadMarket
      */
     function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner {
-        spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
+        spreadMarket = SpreadMarket(_spreadOptionMarket);
         quoteAsset = ERC20(_quoteAsset);
     }
 
@@ -224,7 +224,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         if (withdrawalValue < lpParams.minDepositWithdraw && _amountLiquidityToken < lpParams.minDepositWithdraw) {
             revert MinimumWithdrawNotMet(address(this), withdrawalValue, lpParams.minDepositWithdraw);
         }
-        // if no spreadOptionMarket trades are using collateral
+        // if no spreadMarket trades are using collateral
         // if enough free collateral to withdraw
         if (lockedLiquidity == 0) {
             if (!quoteAsset.transfer(_beneficiary, withdrawalValue)) {
@@ -400,7 +400,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         // check active deposits
         // add to traded
         if (_amount > 0) {
-            if (!quoteAsset.transfer(address(spreadOptionMarket), _amount)) {
+            if (!quoteAsset.transfer(address(spreadMarket), _amount)) {
                 revert CollateralTransferToMarketFail(_amount);
             }
         }

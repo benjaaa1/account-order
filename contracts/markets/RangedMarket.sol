@@ -19,10 +19,10 @@ import "../synthetix/DecimalMath.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 // spread option market
-import {SpreadOptionMarket} from "../SpreadOptionMarket.sol";
-import {RangedMarketToken} from "./RangedMarketToken.sol";
+import {SpreadMarket} from "./SpreadMarket.sol";
+import {RangedMarketToken} from "../positions/RangedMarketToken.sol";
 import {PositionMarket} from "./PositionMarket.sol";
-import {OtusAMM} from "../OtusAMM.sol";
+import {Otus} from "../Otus.sol";
 
 /**
  * @title Ranged Market
@@ -43,9 +43,9 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  INIT STATE
      ***********************************************/
-    SpreadOptionMarket public immutable spreadOptionMarket;
+    SpreadMarket public immutable spreadMarket;
 
-    OtusAMM public immutable otusAMM;
+    Otus public immutable otusAMM;
 
     ILyraBase public lyraBase;
 
@@ -88,9 +88,9 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  CONSTRUCTOR
      ***********************************************/
-    constructor(address payable _spreadOptionMarket, address _otusAMM) {
-        spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
-        otusAMM = OtusAMM(_otusAMM);
+    constructor(address payable _spreadMarket, address _otusAMM) {
+        spreadMarket = SpreadMarket(_spreadMarket);
+        otusAMM = Otus(_otusAMM);
     }
 
     function initialize(
@@ -107,16 +107,16 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         // should be otussettings
         lyraBase = otusAMM.lyraBase(_market);
         // validate ranged positions are valid spreads
-        (bool isValidIn, ) = spreadOptionMarket.validSpread(_inTrades);
+        // (bool isValidIn, ) = spreadOptionMarket.validSpread(_inTrades);
 
-        if (!isValidIn) {
-            revert NotValidRangedPositionIn(_inTrades);
-        }
+        // if (!isValidIn) {
+        //     revert NotValidRangedPositionIn(_inTrades);
+        // }
 
-        (bool isValidOut, ) = spreadOptionMarket.validSpread(_outTrades);
-        if (!isValidOut) {
-            revert NotValidRangedPositionOut(_outTrades);
-        }
+        // (bool isValidOut, ) = spreadOptionMarket.validSpread(_outTrades);
+        // if (!isValidOut) {
+        //     revert NotValidRangedPositionOut(_outTrades);
+        // }
 
         quoteAsset = ERC20(_quoteAsset);
         positionMarketIn = PositionMarket(_positionMarketIn);
@@ -209,12 +209,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             trade = inTrades[i];
             trade.amount = pricing.amount;
 
-            (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
-                market,
-                trade.strikeId,
-                trade.optionType,
-                pricing
-            );
+            (uint totalCost, uint totalFee) = spreadMarket.getQuote(market, trade.strikeId, trade.optionType, pricing);
 
             // if long open
             // this will add costs + maxloss expected for size
@@ -248,13 +243,10 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
                 trade.maxTotalCost = totalCost + totalCost.multiplyDecimal(pricing.slippage);
                 totalCosts += trade.maxTotalCost;
             } else {
-                (uint collateralToRemove, uint setCollateralTo) = spreadOptionMarket.getRequiredCollateralOnClose(
+                (uint collateralToRemove, uint setCollateralTo) = spreadMarket.getRequiredCollateralOnClose(
                     market,
                     trade
                 );
-
-                console.log("collateralToRemove, setCollateralTo");
-                console.log(collateralToRemove, setCollateralTo);
 
                 trade.minTotalCost = totalCost - totalCost.multiplyDecimal(pricing.slippage);
                 totalPremium += trade.minTotalCost;
@@ -302,12 +294,7 @@ contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
             trade = outTrades[i];
             trade.amount = pricing.amount;
 
-            (uint totalCost, uint totalFee) = spreadOptionMarket.getQuote(
-                market,
-                trade.strikeId,
-                trade.optionType,
-                pricing
-            );
+            (uint totalCost, uint totalFee) = spreadMarket.getQuote(market, trade.strikeId, trade.optionType, pricing);
 
             bool isBuy = isOpen ? _isLong(trade.optionType) : !_isLong(trade.optionType);
 

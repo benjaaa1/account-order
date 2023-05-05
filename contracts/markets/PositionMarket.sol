@@ -16,7 +16,7 @@ import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 import "../synthetix/DecimalMath.sol";
 
 // spread option market
-import {SpreadOptionMarket} from "../SpreadOptionMarket.sol";
+import {SpreadMarket} from "../markets/SpreadMarket.sol";
 import {RangedMarket} from "./RangedMarket.sol";
 
 /**
@@ -33,7 +33,7 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  INIT STATE
      ***********************************************/
-    SpreadOptionMarket public spreadOptionMarket;
+    SpreadMarket public spreadMarket;
 
     RangedMarket public rangedMarket;
 
@@ -60,17 +60,17 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     constructor() {}
 
     function initialize(
-        address payable _spreadOptionMarket,
+        address payable _spreadMarket,
         address _rangedMarket,
         address _quoteAsset,
         bytes32 _market
     ) external initializer {
-        spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
+        spreadMarket = SpreadMarket(_spreadMarket);
         rangedMarket = RangedMarket(_rangedMarket);
         quoteAsset = ERC20(_quoteAsset);
         market = _market;
         // approve spread option market max (approve price/cost of position)
-        quoteAsset.approve(address(spreadOptionMarket), type(uint).max);
+        quoteAsset.approve(address(spreadMarket), type(uint).max);
     }
 
     function buy(
@@ -83,27 +83,27 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
 
         TradeInfo memory tradeInfo = TradeInfo({positionId: positionId, market: market});
 
-        (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket
-            .openPosition(
-                tradeInfo,
-                _tradesWithPricing,
-                price // represents max cost + max loss - premium for amount
-            );
+        // (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket
+        //     .openPosition(
+        //         tradeInfo,
+        //         _tradesWithPricing,
+        //         price // represents max cost + max loss - premium for amount
+        //     );
 
-        // spread option token position is valid
-        if (openedPositionId == 0) {
-            revert NotValidPosition();
-        }
+        // // spread option token position is valid
+        // if (openedPositionId == 0) {
+        //     revert NotValidPosition();
+        // }
 
-        // will only be updated once during trade period
-        // update with lyra position ids
-        if (tradeInfo.positionId == 0) {
-            positionId = openedPositionId;
-        } else {
-            isIncrease = true;
-        }
+        // // will only be updated once during trade period
+        // // update with lyra position ids
+        // if (tradeInfo.positionId == 0) {
+        //     positionId = openedPositionId;
+        // } else {
+        //     isIncrease = true;
+        // }
 
-        return (positionId, sellResults, buyResults, isIncrease);
+        // return (positionId, sellResults, buyResults, isIncrease);
     }
 
     function sell(
@@ -111,7 +111,7 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         uint _slippage,
         TradeInputParameters[] memory _tradesWithPricing
     ) external onlyRangedMarket returns (uint funds) {
-        spreadOptionMarket.closePosition(market, positionId, _tradesWithPricing);
+        spreadMarket.closePosition(market, positionId, _tradesWithPricing);
 
         funds = quoteAsset.balanceOf(address(this));
 
@@ -141,7 +141,7 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
         if (positionId == 0) {
             return false;
         }
-        PositionState state = spreadOptionMarket.getOptionStatus(positionId);
+        PositionState state = spreadMarket.getOptionStatus(positionId);
 
         if (state != PositionState.SETTLED) {
             revert PositionNotSettled();

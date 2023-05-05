@@ -5,7 +5,7 @@ pragma solidity 0.8.9;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // spread option market
-import {RangedMarket} from "./RangedMarket.sol";
+import {RangedMarket} from "../markets/RangedMarket.sol";
 
 contract RangedMarketToken is IERC20 {
     /************************************************
@@ -59,11 +59,7 @@ contract RangedMarketToken is IERC20 {
      * @notice initialize ranged market token
      * @param _rangedMarket RangedMarket
      */
-    function initialize(
-        address _rangedMarket,
-        string calldata _name,
-        string calldata _symbol
-    ) external {
+    function initialize(address _rangedMarket, string calldata _name, string calldata _symbol) external {
         if (initialized) {
             revert AlreadyInitialized();
         }
@@ -118,11 +114,7 @@ contract RangedMarketToken is IERC20 {
         return _transfer(msg.sender, _to, _value);
     }
 
-    function transferFrom(
-        address _from,
-        address _to,
-        uint _value
-    ) external override returns (bool success) {
+    function transferFrom(address _from, address _to, uint _value) external override returns (bool success) {
         if (msg.sender != address(rangedMarket)) {
             uint fromAllowance = allowances[_from][msg.sender];
             require(_value <= fromAllowance, "Insufficient allowance");

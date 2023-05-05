@@ -16,28 +16,29 @@ import "./utils/MinimalProxyFactory.sol";
 import "./synthetix/DecimalMath.sol";
 
 // spread and ranged markets
-import "./SpreadOptionMarket.sol";
 import "./markets/RangedMarket.sol";
-import "./markets/RangedMarketToken.sol";
+import "./positions/RangedMarketToken.sol";
 
 // clone library
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /**
- * @title OtusAMM
+ * @title Otus
  * @author Otus
  * @dev Handles creating markets/vaults
- * @dev Traders buy RangedMarketTokens through AMM
- * @dev Calculates max and min costs for user
  */
-contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract Otus is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     using AddressSetLib for AddressSetLib.AddressSet;
     using DecimalMath for uint;
 
     /************************************************
      *  INIT STATE
      ***********************************************/
-    SpreadOptionMarket public spreadOptionMarket;
+    // otus options market
+    address public otusOptionMarket;
+
+    // spread option market
+    address public spreadMarket;
 
     // position market
     address public positionMarket; // implementation
@@ -50,6 +51,8 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
     address public quoteAsset;
 
     AddressSetLib.AddressSet internal _knownMarkets;
+
+    AddressSetLib.AddressSet internal _knownVaults;
 
     mapping(bytes32 => ILyraBase) public lyraBases;
 
@@ -68,7 +71,8 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
     constructor() Ownable() {}
 
     function initialize(
-        address payable _spreadOptionMarket,
+        address _otusOptionMarket,
+        address payable _spreadMarket,
         address _quoteAsset,
         address _positionMarket,
         address _rangedMarket,
@@ -76,17 +80,17 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         address _ethLyraBase,
         address _btcLyraBase
     ) external onlyOwner initializer {
-        spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
+        otusOptionMarket = _otusOptionMarket;
+        spreadMarket = _spreadMarket;
         quoteAsset = _quoteAsset;
-        // implementations
+
+        // market & vault implementations
         positionMarket = _positionMarket;
         rangedMarket = _rangedMarket;
         rangedMarketToken = _rangedMarketToken;
 
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
-
-        emit OtusAMMInit(address(this), _spreadOptionMarket, _ethLyraBase, _btcLyraBase);
     }
 
     /**
@@ -137,15 +141,10 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         );
 
         // init position markets
-        PositionMarket(positionMarketInClone).initialize(
-            payable(address(spreadOptionMarket)),
-            rangedMarketClone,
-            quoteAsset,
-            _market
-        );
+        PositionMarket(positionMarketInClone).initialize(payable(spreadMarket), rangedMarketClone, quoteAsset, _market);
 
         PositionMarket(positionMarketOutClone).initialize(
-            payable(address(spreadOptionMarket)),
+            payable(otusOptionMarket),
             rangedMarketClone,
             quoteAsset,
             _market
@@ -170,54 +169,6 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
             tokenOutClone,
             msg.sender
         );
-    }
-
-    /**
-     * @notice traders buy in and out tokens
-     * @dev to update to whitelist rangedMarket address
-     * @param _position in / out bool
-     * @param _rangedMarket address
-     * @param _amount size
-     * @param _price max price also used to transfer quote
-     * @param tradesWithPricing trades list
-     */
-    function buy(
-        RangedPosition _position,
-        address _rangedMarket,
-        uint _amount,
-        uint _price,
-        TradeInputParameters[] memory tradesWithPricing // will include max cost with slippage
-    ) external knownRangedMarket(_rangedMarket) {
-        // @dev check if valid ranged market
-        if (_position == RangedPosition.IN) {
-            RangedMarket(_rangedMarket).buyIn(_amount, msg.sender, _price, tradesWithPricing);
-        } else {
-            RangedMarket(_rangedMarket).buyOut(_amount, msg.sender, _price, tradesWithPricing);
-        }
-    }
-
-    /**
-     * @notice traders buy in and out tokens
-     * @dev to update to whitelist rangedMarket address
-     * @param _position in / out bool
-     * @param _rangedMarket address
-     * @param _price min price expected
-     * @param _amount amount of positions
-     */
-    function sell(
-        RangedPosition _position,
-        address _rangedMarket,
-        uint _amount,
-        uint _price,
-        uint _slippage,
-        TradeInputParameters[] memory tradesWithPricing // will include max cost with slippage
-    ) external knownRangedMarket(_rangedMarket) {
-        // @dev check if valid ranged market
-        if (_position == RangedPosition.IN) {
-            RangedMarket(_rangedMarket).sellIn(msg.sender, _amount, _price, _slippage, tradesWithPricing);
-        } else {
-            RangedMarket(_rangedMarket).sellOut(msg.sender, _amount, _price, _slippage, tradesWithPricing);
-        }
     }
 
     /************************************************
@@ -253,8 +204,6 @@ contract OtusAMM is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes 
         address rangedMarketTokenOut,
         address _owner
     );
-
-    event OtusAMMInit(address otus, address spreadOptionMarket, address lyraBaseETH, address lyraBaseBTC);
 
     /************************************************
      *  ERRORS

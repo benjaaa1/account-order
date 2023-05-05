@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: ISC
 pragma solidity 0.8.9;
 
-// spread market contracts
-import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
-import {SpreadLiquidityPool} from "./SpreadLiquidityPool.sol";
-
 // libraries
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./synthetix/SafeDecimalMath.sol";
-import "./synthetix/SignedDecimalMath.sol";
+import "../synthetix/SafeDecimalMath.sol";
+import "../synthetix/SignedDecimalMath.sol";
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -30,16 +26,16 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
 
     IERC20 public quoteAsset;
 
-    SpreadOptionMarket internal spreadOptionMarket;
-    SpreadLiquidityPool internal spreadLiquidityPool;
+    address internal spreadMarket;
+    address internal spreadLiquidityPool;
 
     /************************************************
      *  MODIFIERS
      ***********************************************/
 
-    modifier onlySpreadOptionMarket() {
-        if (msg.sender != address(spreadOptionMarket)) {
-            revert OnlySpreadOptionMarket(msg.sender, address(spreadOptionMarket));
+    modifier onlySpreadMarket() {
+        if (msg.sender != spreadMarket) {
+            revert OnlySpreadOptionMarket(address(this), msg.sender, spreadMarket);
         }
         _;
     }
@@ -56,17 +52,17 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
     /**
      * @notice initialize users account
      * @param _quoteAsset address used as margin asset (USDC / SUSD)
-     * @param _spreadOptionMarket option market
+     * @param _spreadMarket option market
      * @param _spreadLiquidityPool liquidity pool
      */
     function initialize(
         address _quoteAsset,
-        address payable _spreadOptionMarket,
+        address _spreadMarket,
         address _spreadLiquidityPool
     ) external onlyOwner initializer {
         quoteAsset = IERC20(_quoteAsset);
-        spreadOptionMarket = SpreadOptionMarket(_spreadOptionMarket);
-        spreadLiquidityPool = SpreadLiquidityPool(_spreadLiquidityPool);
+        spreadMarket = _spreadMarket;
+        spreadLiquidityPool = _spreadLiquidityPool;
     }
 
     /************************************************
@@ -75,13 +71,13 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
 
     // @notice only spread option market
     // @dev routes max loss posted to liquidity pool
-    function sendQuoteToLiquidityPool(uint _amount) public onlySpreadOptionMarket {
-        _transferQuote(address(spreadLiquidityPool), _amount);
+    function sendQuoteToLiquidityPool(uint _amount) public onlySpreadMarket {
+        _transferQuote(spreadLiquidityPool, _amount);
     }
 
     // @notice only spread option market
     // @dev routes max loss posted back to trader
-    function sendQuoteToTrader(address _recipient, uint _amount) public onlySpreadOptionMarket {
+    function sendQuoteToTrader(address _recipient, uint _amount) public onlySpreadMarket {
         _transferQuote(_recipient, _amount);
     }
 
@@ -105,10 +101,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
 
     /// @dev sends quote collateral covering max losses
     /// @dev remove this
-    function _sendMaxLossQuoteCollateral(
-        address _recipient,
-        uint _amount
-    ) external onlySpreadOptionMarket {
+    function _sendMaxLossQuoteCollateral(address _recipient, uint _amount) external onlySpreadMarket {
         // either sends to user
         // or sends to spreadliquidity pool
         if (_amount == 0) {
@@ -137,10 +130,8 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializeable, ReentrancyGua
      *  ERRORS
      ***********************************************/
 
-    /// @notice only spread market
-    /// @param caller address
-    /// @param optionMarket address
-    error OnlySpreadOptionMarket(address caller, address optionMarket);
+    /// @dev only otus option market
+    error OnlySpreadOptionMarket(address thrower, address caller, address optionMarket);
 
     /// @notice out of funds
     /// @param thrower address

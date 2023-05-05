@@ -3,9 +3,9 @@ pragma solidity 0.8.9;
 
 import "hardhat/console.sol";
 
-import "./interfaces/ILyraBase.sol";
+import "../interfaces/ILyraBase.sol";
 
-import "./synthetix/SafeDecimalMath.sol";
+import "../synthetix/SafeDecimalMath.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -13,21 +13,20 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 // import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 
-import {IOptionToken} from "@lyrafinance/protocol/contracts/interfaces/IOptionToken.sol";
 import {OptionToken} from "@lyrafinance/protocol/contracts/OptionToken.sol";
 import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
 
-import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
+import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 // inherits
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 
 /**
- * @title SpreadOptionToken
+ * @title OtusOptionToken
  * @author Otus
  * @dev Provides a tokenized representation of each trade position including amount of options and collateral used from Pool.
  */
-contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ERC721Enumerable, ITradeTypes {
+contract OtusOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ERC721Enumerable, ITradeTypes {
     using SafeDecimalMath for uint;
 
     enum PositionUpdatedType {
@@ -35,7 +34,8 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         ADJUSTED,
         CLOSED,
         SETTLED,
-        LIQUIDATED
+        LIQUIDATED,
+        TRANSFER
     }
 
     struct SettledPosition {
@@ -55,7 +55,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         uint setCollateralTo;
     }
 
-    struct SpreadOptionPosition {
+    struct OtusOptionPosition {
         uint size;
         address trader;
         bytes32 market;
@@ -64,9 +64,10 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         uint maxLossPosted;
         PositionState state;
         uint[] allPositions;
+        TradeType tradeType;
     }
 
-    mapping(uint => SpreadOptionPosition) public positions;
+    mapping(uint => OtusOptionPosition) public positions;
 
     uint public nextId = 1;
 
@@ -74,7 +75,11 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
      *  INIT STATE
      ***********************************************/
 
-    address public spreadOptionMarket;
+    // otus options market
+    address public otusOptionMarket;
+
+    // spread option market
+    address public spreadMarket;
 
     mapping(bytes32 => ILyraBase) public lyraBases;
 
@@ -82,9 +87,23 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
      *  MODIFIERS
      ***********************************************/
 
-    modifier onlySpreadOptionMarket() {
-        if (msg.sender != spreadOptionMarket) {
-            revert OnlySpreadOptionMarket(address(this), msg.sender, spreadOptionMarket);
+    modifier onlySpreadMarket() {
+        if (msg.sender != spreadMarket) {
+            revert OnlySpreadOptionMarket(address(this), msg.sender, spreadMarket);
+        }
+        _;
+    }
+
+    modifier onlyOtusMarket() {
+        if (msg.sender != otusOptionMarket) {
+            revert OnlyOtusOptionMarket(address(this), msg.sender, otusOptionMarket);
+        }
+        _;
+    }
+
+    modifier onlyOtusMarkets() {
+        if (msg.sender != spreadMarket && msg.sender != otusOptionMarket) {
+            revert OnlyOtusMarkets(address(this), msg.sender);
         }
         _;
     }
@@ -99,16 +118,19 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
      ***********************************************/
     /**
      * @notice initialize spread option market/trader
-     * @param _spreadOptionMarket otus spread option market/trader
+     * @param _otusOptionMarket otus spread option market/trader
+     * @param _spreadMarket otus spread option market/trader
      */
     function initialize(
-        address _spreadOptionMarket,
+        address _otusOptionMarket,
+        address _spreadMarket,
         address _ethLyraBase,
         address _btcLyraBase
     ) external onlyOwner initializer {
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
-        spreadOptionMarket = _spreadOptionMarket;
+        otusOptionMarket = _otusOptionMarket;
+        spreadMarket = _spreadMarket;
     }
 
     /************************************************
@@ -131,7 +153,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         TradeResult[] memory _buyResults,
         uint _totalSetCollateralTo,
         uint _maxLossPosted
-    ) public onlySpreadOptionMarket returns (uint) {
+    ) public onlySpreadMarket returns (uint) {
         return
             _openPosition(
                 _trader,
@@ -140,65 +162,40 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
                 _buyResults,
                 _tradeInfo.positionId, // position id
                 _totalSetCollateralTo,
-                _maxLossPosted
+                _maxLossPosted,
+                TradeType.SPREAD
             );
     }
 
     /**
-     * @notice Closes position amount and decreases maxloss
+     * @notice Opens position amount and collateral when position is
      * opened/closed/forceclosed/liquidated
      * @param _trader owner
-     * @param _partialSum owner
-     * @param _positionId owner
      * @param _sellResults results from trade
      * @param _buyResults results from trade
+     * @dev may need to combine the results and trades arrays
      */
-    function closePosition(
+    function openPosition(
+        TradeInfo memory _tradeInfo,
         address _trader,
-        uint _partialSum, // multiply partial sum to previous maxloss posted and set new maxloss
-        uint _positionId,
         TradeResult[] memory _sellResults,
         TradeResult[] memory _buyResults
-    ) public onlySpreadOptionMarket {
-        SpreadOptionPosition storage position;
-
-        if (_positionId == 0) {
-            revert CannotClosePositionZero(address(this));
-        }
-
-        position = positions[_positionId];
-
-        if (_trader != ownerOf(position.positionId)) {
-            revert OnlyOwnerCanAdjustPosition(address(this), _positionId, _trader, ownerOf(position.positionId));
-        }
-
-        if (_partialSum > 0) {
-            position.maxLossPosted -= position.maxLossPosted.multiplyDecimal(_partialSum.divideDecimal(position.size));
-            for (uint i = 0; i < _sellResults.length; i++) {
-                TradeResult memory result = _sellResults[i];
-                position.size -= result.amount;
-            }
-
-            for (uint i = 0; i < _buyResults.length; i++) {
-                TradeResult memory result = _buyResults[i];
-                position.size -= result.amount;
-            }
-        } else {
-            position.maxLossPosted = 0;
-            position.state = PositionState.CLOSED;
-        }
-
-        emit PositionUpdated(
-            position.positionId,
-            _trader,
-            _partialSum > 0 ? PositionUpdatedType.ADJUSTED : PositionUpdatedType.CLOSED,
-            position,
-            block.timestamp
-        );
+    ) public onlyOtusMarket returns (uint) {
+        return
+            _openPosition(
+                _trader,
+                _tradeInfo.market,
+                _sellResults,
+                _buyResults,
+                _tradeInfo.positionId, // position id
+                0,
+                0,
+                TradeType.MULTI
+            );
     }
 
     /**
-     * @notice Adjusts position amount and collateral when spread position is
+     * @notice Adjusts position amount and collateral when position is
      * opened/closed/forceclosed/liquidated
      * @param _trader owner
      * @param _sellResults results from trade
@@ -214,15 +211,18 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         TradeResult[] memory _buyResults,
         uint _positionId,
         uint _totalSetCollateralTo,
-        uint _maxLossPosted
+        uint _maxLossPosted,
+        TradeType _tradeType
     ) internal returns (uint) {
-        SpreadOptionPosition storage position;
+        OtusOptionPosition storage position;
         bool newPosition = false;
         if (_positionId == 0) {
             _positionId = nextId++;
             _mint(_trader, _positionId);
             position = positions[_positionId];
+            position.tradeType = _tradeType;
             position.trader = _trader;
+
             position.market = _market;
             position.positionId = _positionId;
 
@@ -273,12 +273,65 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         return position.positionId;
     }
 
+    /**
+     * @notice Closes position amount and decreases maxloss
+     * opened/closed/forceclosed/liquidated
+     * @param _trader owner
+     * @param _partialSum owner
+     * @param _positionId owner
+     * @param _sellResults results from trade
+     * @param _buyResults results from trade
+     */
+    function closePosition(
+        address _trader,
+        uint _partialSum, // multiply partial sum to previous maxloss posted and set new maxloss
+        uint _positionId,
+        TradeResult[] memory _sellResults,
+        TradeResult[] memory _buyResults
+    ) public onlySpreadMarket {
+        OtusOptionPosition storage position;
+
+        if (_positionId == 0) {
+            revert CannotClosePositionZero(address(this));
+        }
+
+        position = positions[_positionId];
+
+        if (_trader != ownerOf(position.positionId)) {
+            revert OnlyOwnerCanAdjustPosition(address(this), _positionId, _trader, ownerOf(position.positionId));
+        }
+
+        if (_partialSum > 0) {
+            position.maxLossPosted -= position.maxLossPosted.multiplyDecimal(_partialSum.divideDecimal(position.size));
+            for (uint i = 0; i < _sellResults.length; i++) {
+                TradeResult memory result = _sellResults[i];
+                position.size -= result.amount;
+            }
+
+            for (uint i = 0; i < _buyResults.length; i++) {
+                TradeResult memory result = _buyResults[i];
+                position.size -= result.amount;
+            }
+        } else {
+            position.maxLossPosted = 0;
+            position.state = PositionState.CLOSED;
+        }
+
+        emit PositionUpdated(
+            position.positionId,
+            _trader,
+            _partialSum > 0 ? PositionUpdatedType.ADJUSTED : PositionUpdatedType.CLOSED,
+            position,
+            block.timestamp
+        );
+    }
+
     /************************************************
      * UTILS
      ***********************************************/
 
-    function getPosition(uint _spreadPositionId) external view returns (SpreadOptionPosition memory position) {
-        position = positions[_spreadPositionId];
+    function getPosition(uint _positionId) external view returns (OtusOptionPosition memory position) {
+        position = positions[_positionId];
     }
 
     /**
@@ -286,9 +339,9 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
      * @param target owner address
      * @dev Meant to be used offchain as it can run out of gas
      */
-    function getOwnerPositions(address target) external view returns (SpreadOptionPosition[] memory) {
+    function getOwnerPositions(address target) external view returns (OtusOptionPosition[] memory) {
         uint balance = balanceOf(target);
-        SpreadOptionPosition[] memory result = new SpreadOptionPosition[](balance);
+        OtusOptionPosition[] memory result = new OtusOptionPosition[](balance);
         for (uint i = 0; i < balance; ++i) {
             result[i] = positions[ERC721Enumerable.tokenOfOwnerByIndex(target, i)];
         }
@@ -297,7 +350,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
 
     /**
      * @notice returns position ids
-     * @return positionIds position ids for spread option position
+     * @return positionIds position ids for otus option position
      */
     function getPositionIds() external view returns (uint[] memory positionIds) {
         positionIds = new uint[](totalSupply());
@@ -309,16 +362,16 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
 
     /**
      * @notice Ensure all positions are settled on lyra
-     * @param _spreadPostionId Position Id of Spread Option traded
+     * @param _otusPositionId Position Id of Spread Option traded
      * @return settledPositions position info
      */
     function checkLyraPositionsSettled(
-        uint _spreadPostionId
+        uint _otusPositionId
     ) external view returns (SettledPosition[] memory settledPositions) {
-        SpreadOptionPosition storage position = positions[_spreadPostionId];
+        OtusOptionPosition storage position = positions[_otusPositionId];
 
         if (position.positionId == 0) {
-            revert SpreadOptionPositionNotValid(_spreadPostionId);
+            revert OtusOptionPositionNotValid(_otusPositionId);
         }
 
         uint positionsLen = position.allPositions.length;
@@ -331,7 +384,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         OptionToken optionToken = OptionToken(_optionToken);
 
         // can't use getPositionsWithOwner because option token has been burned on settlement by lyra
-        //  use getOptionPositions
+        // use getOptionPositions
         OptionToken.OptionPosition[] memory optionPositions = optionToken.getOptionPositions(position.allPositions);
 
         uint strikePrice;
@@ -341,7 +394,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         for (uint i = 0; i < optionPositions.length; i++) {
             OptionToken.OptionPosition memory lyraPosition = optionPositions[i];
             // state closed - collateral routing handled on close
-            // @dev to do state liquidated - handled by keeper for edge case
+            // @todo state liquidated
             if (lyraPosition.state == OptionToken.PositionState.SETTLED) {
                 (strikePrice, priceAtExpiry, ) = optionMarket.getSettlementParameters(lyraPosition.strikeId);
 
@@ -361,20 +414,37 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
 
     /**
      * @notice settles position
-     * @param _spreadPositionId id of position
+     * @param _positionId id of position
      */
-    function settlePosition(uint _spreadPositionId) public onlySpreadOptionMarket {
-        positions[_spreadPositionId].state = PositionState.SETTLED;
+    function settlePosition(uint _positionId) public onlyOtusMarkets {
+        positions[_positionId].state = PositionState.SETTLED;
 
         emit PositionUpdated(
-            _spreadPositionId,
-            ownerOf(_spreadPositionId),
+            _positionId,
+            ownerOf(_positionId),
             PositionUpdatedType.SETTLED,
-            positions[_spreadPositionId],
+            positions[_positionId],
             block.timestamp
         );
 
-        _burn(_spreadPositionId);
+        _burn(_positionId);
+    }
+
+    /**
+     * @notice empties position used by otus market when transferring underlying tokens to trader
+     * @param _positionId id of position
+     */
+    function emptyPosition(uint _positionId) public onlyOtusMarket {
+        positions[_positionId].state = PositionState.EMPTY;
+
+        emit PositionUpdated(
+            _positionId,
+            ownerOf(_positionId),
+            PositionUpdatedType.ADJUSTED,
+            positions[_positionId],
+            block.timestamp
+        );
+        _burn(_positionId);
     }
 
     /************************************************
@@ -390,9 +460,14 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
     /************************************************
      * ERRORS
      ***********************************************/
+    /// @dev only otus option market
+    error OnlyOtusOptionMarket(address thrower, address caller, address optionMarket);
 
     /// @dev only spread market
     error OnlySpreadOptionMarket(address thrower, address caller, address optionMarket);
+
+    /// @dev only otus markets
+    error OnlyOtusMarkets(address thrower, address caller);
 
     /// @dev attempt to adjust non existent position
     error CannotClosePositionZero(address thrower);
@@ -404,7 +479,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
     error LyraPositionNotSettled(OptionToken.OptionPosition lyraPosition);
 
     /// @dev reverted when position id doesn't exist
-    error SpreadOptionPositionNotValid(uint positionId);
+    error OtusOptionPositionNotValid(uint positionId);
     /************************************************
      * EVENTS
      ***********************************************/
@@ -414,7 +489,7 @@ contract SpreadOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ER
         uint indexed positionId, // spread position
         address indexed owner,
         PositionUpdatedType indexed updatedType,
-        SpreadOptionPosition position,
+        OtusOptionPosition position,
         uint timestamp
     );
 }

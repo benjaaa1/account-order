@@ -81,17 +81,31 @@ interface ITradeTypes {
         uint strikeId;
     }
 
-    struct TradeResultDirect {
-        bytes32 market;
-        uint positionId;
-        uint totalCost;
-        uint totalFee;
-    }
-
     struct Pricing {
         uint amount;
         uint slippage;
         uint tradeDirection;
         bool forceClose;
     }
+
+    enum TradeType {
+        MULTI,
+        SPREAD
+    }
+
+    /************************************************
+     *  EVENTS
+     ***********************************************/
+
+    /// @dev Used by otusOptionMarket and spreadMarkets to log trades
+    event Trade(
+        address indexed trader,
+        uint positionId,
+        TradeResult[] sellResults,
+        TradeResult[] buyResults,
+        uint collateralBorrowed, // borrowed
+        uint maxCost,
+        uint fee,
+        TradeType tradeType
+    );
 }

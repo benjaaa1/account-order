@@ -12,9 +12,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-import "./interfaces/ILyraBase.sol";
+import "../interfaces/ILyraBase.sol";
 import {BasicFeeCounter} from "@lyrafinance/protocol/contracts/periphery/BasicFeeCounter.sol";
-import {ITradeTypes} from "./interfaces/ITradeTypes.sol";
+import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 
 /**
  * @title LyraAdapter
@@ -81,10 +81,7 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
      * @param params params to open trade on lyra
      * @return result of opening trade
      */
-    function _openPosition(
-        bytes32 _market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResultDirect memory) {
+    function _openPosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
         IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
         // IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
         // IOptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
@@ -118,14 +115,16 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
             );
         }
 
-        IOptionToken(lyraBase(_market).getOptionToken()).safeTransferFrom(address(this), msg.sender, result.positionId);
-
         return
-            TradeResultDirect({
+            TradeResult({
                 market: _market,
                 positionId: result.positionId,
                 totalCost: result.totalCost,
-                totalFee: result.totalFee
+                totalFee: result.totalFee,
+                optionType: params.optionType,
+                amount: params.amount,
+                setCollateralTo: params.setCollateralTo,
+                strikeId: params.strikeId
             });
     }
 
@@ -138,7 +137,7 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
     function _closeOrForceClosePosition(
         bytes32 _market,
         TradeInputParameters memory params
-    ) internal returns (TradeResultDirect memory tradeResult) {
+    ) internal returns (TradeResult memory tradeResult) {
         if (
             !lyraBase(_market)._isOutsideDeltaCutoff(_market, params.strikeId) &&
             !lyraBase(_market)._isWithinTradingCutoff(_market, params.strikeId)
@@ -155,10 +154,7 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
      * @param params params to close trade on lyra
      * @return result of trade
      */
-    function _closePosition(
-        bytes32 _market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResultDirect memory) {
+    function _closePosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
         IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
 
         IOptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
@@ -174,11 +170,15 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
         }
 
         return
-            TradeResultDirect({
+            TradeResult({
                 market: _market,
                 positionId: result.positionId,
                 totalCost: result.totalCost,
-                totalFee: result.totalFee
+                totalFee: result.totalFee,
+                optionType: params.optionType,
+                amount: params.amount,
+                setCollateralTo: params.setCollateralTo,
+                strikeId: params.strikeId
             });
     }
 
@@ -190,7 +190,7 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
     function _forceClosePosition(
         bytes32 _market,
         TradeInputParameters memory params
-    ) internal returns (TradeResultDirect memory) {
+    ) internal returns (TradeResult memory) {
         IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
         IOptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
 
@@ -205,12 +205,47 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
         }
 
         return
-            TradeResultDirect({
+            TradeResult({
                 market: _market,
                 positionId: result.positionId,
                 totalCost: result.totalCost,
-                totalFee: result.totalFee
+                totalFee: result.totalFee,
+                optionType: params.optionType,
+                amount: params.amount,
+                setCollateralTo: params.setCollateralTo,
+                strikeId: params.strikeId
             });
+    }
+
+    /************************************************
+     *  Transfer Lyra Option Token
+     ***********************************************/
+
+    /**
+     * @notice transfer lyra option token to this trader
+     * @param _market btc/eth
+     * @param _to address of trader
+     * @param positionId of lyra position
+     */
+    function _transferToken(bytes32 _market, address _to, uint positionId) internal {
+        IOptionToken(lyraBase(_market).getOptionToken()).safeTransferFrom(address(this), _to, positionId);
+    }
+
+    /**
+     * @notice bulk transfer lyra option tokens to this trader
+     * @param _market btc/eth
+     * @param _to address of trader
+     * @param positionIds of lyra positions
+     */
+    function _bulkTransferToken(bytes32 _market, address _to, uint[] memory positionIds) internal {
+        IOptionToken optionToken = IOptionToken(lyraBase(_market).getOptionToken());
+
+        for (uint i; i < positionIds.length; ) {
+            optionToken.safeTransferFrom(address(this), _to, positionIds[i]);
+            unchecked {
+                i++;
+            }
+        }
     }
 
     /************************************************

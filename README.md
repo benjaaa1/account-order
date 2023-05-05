@@ -231,3 +231,6 @@ function valid() {
 function execute
 
 }
+
+sometimes subtracting twice when 1 is enough to cancel short calls lost
+so maybe add profits?

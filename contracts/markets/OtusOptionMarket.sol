@@ -6,18 +6,26 @@ import "hardhat/console.sol";
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
-import {LyraAdapter} from "./LyraAdapter.sol";
+import {LyraAdapter} from "../lyra/LyraAdapter.sol";
+import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
 
 // interfaces
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../interfaces/ISettlementCalculator.sol";
 
 contract OtusOptionMarket is LyraAdapter {
+    /************************************************
+     *  INIT STATE
+     ***********************************************/
+
+    OtusOptionToken internal otusOptionToken;
+
+    address internal settlementCalculator;
+
     /************************************************
      *  STATE
      ***********************************************/
     uint MAX_ITERATION = 4;
-
-    uint COMBO_NEXT_ID = 1;
 
     /************************************************
      *  CONSTRUCTOR
@@ -35,9 +43,13 @@ contract OtusOptionMarket is LyraAdapter {
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
-        address _feeCounter
+        address _feeCounter,
+        address _otusOptionToken,
+        address _settlementCalculator
     ) external onlyOwner {
         adapterInitialize(_quoteAsset, _ethLyraBase, _btcLyraBase, _feeCounter);
+        otusOptionToken = OtusOptionToken(_otusOptionToken);
+        settlementCalculator = _settlementCalculator;
     }
 
     /************************************************
@@ -51,6 +63,29 @@ contract OtusOptionMarket is LyraAdapter {
      *  Lyra Trade
      ***********************************************/
 
+    function openPosition(
+        TradeInfo memory tradeInfo,
+        TradeInputParameters[] memory _shortTrades,
+        TradeInputParameters[] memory _longTrades
+    ) external nonReentrant {
+        (TradeResult[] memory sellResults, TradeResult[] memory buyResults) = _openLyraPosition(
+            tradeInfo.market,
+            _shortTrades,
+            _longTrades
+        );
+
+        if ((sellResults.length + buyResults.length) == 1) {
+            // send option token to trader
+            uint lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
+            _transferToken(tradeInfo.market, msg.sender, lyraPositionId);
+        } else {
+            // send combo token to trader
+            uint positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
+
+            emit Trade(msg.sender, positionId, sellResults, buyResults, 0, 0, 0, TradeType.MULTI);
+        }
+    }
+
     /**
      * @notice Opens a position on Lyra
      * @dev exeuctes a series of trades on Lyra
@@ -58,13 +93,16 @@ contract OtusOptionMarket is LyraAdapter {
      * @param _shortTrades the trades to open short positions
      * @param _longTrades the trades to open long positions
      */
-    function openLyraPosition(
+    function _openLyraPosition(
         bytes32 market,
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
-    ) external nonReentrant {
+    ) internal returns (TradeResult[] memory sellResults, TradeResult[] memory buyResults) {
         TradeInputParameters memory trade;
-        TradeResultDirect memory result;
+        TradeResult memory result;
+
+        sellResults = new TradeResult[](_shortTrades.length);
+        buyResults = new TradeResult[](_longTrades.length);
 
         // calculate collateral required from trader
         // and transfer to this contract
@@ -83,8 +121,8 @@ contract OtusOptionMarket is LyraAdapter {
         for (uint i = 0; i < _shortTrades.length; i++) {
             trade = _shortTrades[i];
             result = _openPosition(market, trade);
+            sellResults[i] = result;
             premium += result.totalCost;
-            emit OpenPosition(COMBO_NEXT_ID, result);
         }
 
         // calculate max cost of longs
@@ -103,20 +141,75 @@ contract OtusOptionMarket is LyraAdapter {
         for (uint i = 0; i < _longTrades.length; i++) {
             trade = _longTrades[i];
             result = _openPosition(market, trade);
+            buyResults[i] = result;
             actualCost += result.totalCost;
-            emit OpenPosition(COMBO_NEXT_ID, result);
         }
 
         // send extra back to user
         if (cost > actualCost) {
             sendFundsToTrader(msg.sender, cost - actualCost);
         }
-
-        COMBO_NEXT_ID++;
     }
 
     function closeLyraPosition(bytes32 market, TradeInputParameters memory _trade) external nonReentrant {
         _closeOrForceClosePosition(market, _trade);
+    }
+
+    /************************************************
+     *  POSITION SPLIT
+     ***********************************************/
+
+    /**
+     * @notice Burns otus option token and transfers lyra tokens to trader if position not settled
+     * @param _multiLegPositionId the position id of the multi leg position
+     */
+    function burnAndTransfer(uint _multiLegPositionId) external {
+        OtusOptionToken.OtusOptionPosition memory position = otusOptionToken.getPosition(_multiLegPositionId);
+
+        if (position.trader != msg.sender) {
+            revert("not your position");
+        }
+
+        if (position.tradeType != TradeType.MULTI) {
+            revert("not a multi leg position");
+        }
+
+        /// @dev transfer lyra positions to trader
+        _bulkTransferToken(position.market, position.trader, position.allPositions);
+
+        // otusOptionToken._bulkTransferToken(position.positionId);
+        /// @dev empties otus option token
+        otusOptionToken.emptyPosition(_multiLegPositionId);
+    }
+
+    /************************************************
+     *  MULTI LEG SETTLEMENT
+     ***********************************************/
+    /**
+     * @notice Settles positions in option market
+     * @dev Only settles if all lyra positions are settled
+     * @param _multiLegPositionId the position id of the multi leg position
+     */
+    function settleOption(uint _multiLegPositionId) external nonReentrant {
+        OtusOptionToken.OtusOptionPosition memory position = otusOptionToken.getPosition(_multiLegPositionId);
+
+        // reverts if positions are not settled in lyra
+        OtusOptionToken.SettledPosition[] memory optionPositions = otusOptionToken.checkLyraPositionsSettled(
+            _multiLegPositionId
+        );
+
+        otusOptionToken.settlePosition(_multiLegPositionId);
+
+        (
+            uint totalCollateralSettlementAmount, // totalPendingCollateral
+            uint traderSettlementAmount, // traderProfit
+
+        ) = ISettlementCalculator(settlementCalculator).calculate(optionPositions);
+
+        // send funds to trader
+        address trader = position.trader;
+        sendFundsToTrader(trader, traderSettlementAmount + totalCollateralSettlementAmount);
+        // emit position settled
     }
 
     /************************************************
@@ -138,12 +231,6 @@ contract OtusOptionMarket is LyraAdapter {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }
     }
-
-    /************************************************
-     *  EVENTS
-     ***********************************************/
-
-    event OpenPosition(uint comobId, TradeResultDirect result);
 
     /************************************************
      *  ERRORS
