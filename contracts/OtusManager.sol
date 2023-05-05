@@ -53,6 +53,9 @@ contract OtusManager is Ownable, SimpleInitializeable {
     /// @dev collateralRequirement used for vaults and spread market
     uint public collateralRequirement = 1e18; // 100%
 
+    /// @dev collateralBuffer used for vaults and spread market
+    uint public collateralBuffer = 0; // 0%
+
     /// @dev lyra base helper methods
     mapping(bytes32 => ILyraBase) public lyraBases;
 
@@ -75,6 +78,10 @@ contract OtusManager is Ownable, SimpleInitializeable {
     /************************************************
      *  TRADE SETTINGS
      ***********************************************/
+    /**
+     * @notice controls max trades allowed
+     * @param _maxTrades max trades per tx for spread market and multi leg market
+     */
     function setMaxTrades(uint _maxTrades) external onlyOwner {
         maxTrades = _maxTrades;
     }

@@ -15,6 +15,7 @@ import {
   LyraBase,
   LyraQuoter,
   MockERC20,
+  OtusManager,
   OtusOptionMarket,
   OtusOptionToken,
   SettlementCalculator
@@ -36,6 +37,7 @@ let optionToken: OptionToken;
 let otusOptionMarket: OtusOptionMarket;
 let otusOptionToken: OtusOptionToken;
 let settlementCalculator: SettlementCalculator;
+let otusManager: OtusManager;
 
 let deployer: SignerWithAddress;
 let owner: SignerWithAddress;
@@ -124,7 +126,11 @@ describe("spread option market", async () => {
     const OtusOptionMarket = await ethers.getContractFactory("OtusOptionMarket");
     otusOptionMarket = (await OtusOptionMarket.connect(deployer).deploy()) as OtusOptionMarket;
 
+    const OtusManager = await ethers.getContractFactory("OtusManager");
+    otusManager = (await OtusManager.connect(deployer).deploy()) as OtusManager;
+
     await otusOptionMarket.connect(deployer).initialize(
+      otusManager.address,
       lyraTestSystem.snx.quoteAsset.address,
       lyraBaseETH.address,
       lyraBaseETH.address,

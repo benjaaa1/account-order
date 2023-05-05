@@ -19,7 +19,8 @@ import {
   SpreadMaxLossCollateral,
   SpreadMarket,
   OtusOptionToken,
-  OtusOptionMarket
+  OtusOptionMarket,
+  OtusManager
 } from "../../typechain-types";
 import { LyraGlobal } from "@lyrafinance/protocol/dist/test/utils/package/parseFiles";
 import { BigNumber, BigNumberish } from "ethers";
@@ -41,6 +42,7 @@ let spreadOptionToken: OtusOptionToken;
 let spreadMaxLossCollateral: SpreadMaxLossCollateral;
 let maxLossCalculator: MaxLossCalculator;
 let settlementCalculator: SettlementCalculator;
+let otusManager: OtusManager;
 
 let deployer: SignerWithAddress;
 let owner: SignerWithAddress;
@@ -146,7 +148,11 @@ describe("spread option market", async () => {
     const SettlementCalculator = await ethers.getContractFactory("SettlementCalculator");
     settlementCalculator = (await SettlementCalculator.connect(deployer).deploy()) as SettlementCalculator;
 
+    const OtusManager = await ethers.getContractFactory("OtusManager");
+    otusManager = (await OtusManager.connect(deployer).deploy()) as OtusManager;
+
     await spreadOptionMarket.connect(deployer).initialize(
+      otusManager.address,
       lyraTestSystem.snx.quoteAsset.address,
       lyraBaseETH.address,
       lyraBaseETH.address,

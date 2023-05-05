@@ -3,6 +3,8 @@ pragma solidity 0.8.9;
 
 import "hardhat/console.sol";
 
+import {OtusManager} from "../OtusManager.sol";
+
 // spread market contracts
 import {SpreadMaxLossCollateral} from "../pools/SpreadMaxLossCollateral.sol";
 import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
@@ -39,13 +41,6 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
     using SignedDecimalMath for int;
 
     /************************************************
-     *  IMMUTABLES & CONSTANTS
-     ***********************************************/
-
-    uint internal constant COLLATERAL_BUFFER = 0; // 100%
-    uint internal constant COLLATERAL_REQUIRED = 5e17; // 100% more tests required with lower required collateral
-
-    /************************************************
      *  INIT STATE
      ***********************************************/
 
@@ -58,6 +53,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
     SpreadLiquidityPool internal spreadLiquidityPool;
 
     OtusOptionToken internal otusOptionToken;
+
+    OtusManager internal otusManager;
 
     address internal maxLossCalculator;
 
@@ -85,6 +82,7 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
      * @param _maxLossCalculator max loss calculator address
      */
     function initialize(
+        address _otusManager,
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
@@ -94,6 +92,7 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
         address _maxLossCalculator,
         address _settlementCalculator
     ) external onlyOwner initializer {
+        otusManager = OtusManager(_otusManager);
         quoteAsset = IERC20(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
@@ -131,7 +130,7 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
         TradeInputParameters[] memory shortTrades,
         TradeInputParameters[] memory longTrades
     ) external nonReentrant {
-        if ((shortTrades.length + longTrades.length) > 4) {
+        if ((shortTrades.length + longTrades.length) > otusManager.maxTrades()) {
             revert("NotValidTradeSize");
         }
 
@@ -1000,8 +999,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
             _trade.positionId,
             strike.strikePrice,
             strike.expiry,
-            COLLATERAL_BUFFER,
-            COLLATERAL_REQUIRED
+            otusManager.collateralBuffer(),
+            otusManager.collateralRequirement()
         );
     }
 
@@ -1024,7 +1023,7 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
             _trade.positionId,
             strike.strikePrice,
             strike.expiry,
-            COLLATERAL_BUFFER
+            otusManager.collateralBuffer()
         );
     }
 

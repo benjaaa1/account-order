@@ -8,6 +8,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 import {LyraAdapter} from "../lyra/LyraAdapter.sol";
 import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
+import {OtusManager} from "../OtusManager.sol";
 
 // interfaces
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -18,14 +19,11 @@ contract OtusOptionMarket is LyraAdapter {
      *  INIT STATE
      ***********************************************/
 
+    OtusManager internal otusManager;
+
     OtusOptionToken internal otusOptionToken;
 
     address internal settlementCalculator;
-
-    /************************************************
-     *  STATE
-     ***********************************************/
-    uint MAX_ITERATION = 4;
 
     /************************************************
      *  CONSTRUCTOR
@@ -40,6 +38,7 @@ contract OtusOptionMarket is LyraAdapter {
      * @notice initialize users account
      */
     function initialize(
+        address _otusManager,
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
@@ -48,15 +47,9 @@ contract OtusOptionMarket is LyraAdapter {
         address _settlementCalculator
     ) external onlyOwner {
         adapterInitialize(_quoteAsset, _ethLyraBase, _btcLyraBase, _feeCounter);
+        otusManager = OtusManager(_otusManager);
         otusOptionToken = OtusOptionToken(_otusOptionToken);
         settlementCalculator = _settlementCalculator;
-    }
-
-    /************************************************
-     * ADMIN
-     ***********************************************/
-    function setMaxIterations(uint _maxIterations) external onlyOwner {
-        MAX_ITERATION = _maxIterations;
     }
 
     /************************************************
@@ -68,6 +61,10 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
     ) external nonReentrant {
+        if (otusManager.maxTrades() < (_shortTrades.length + _longTrades.length)) {
+            revert("Too many trades");
+        }
+
         (TradeResult[] memory sellResults, TradeResult[] memory buyResults) = _openLyraPosition(
             tradeInfo.market,
             _shortTrades,
@@ -75,13 +72,12 @@ contract OtusOptionMarket is LyraAdapter {
         );
 
         if ((sellResults.length + buyResults.length) == 1) {
-            // send option token to trader
+            // send lyra option token to trader
             uint lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
             _transferToken(tradeInfo.market, msg.sender, lyraPositionId);
         } else {
             // send combo token to trader
             uint positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
-
             emit Trade(msg.sender, positionId, sellResults, buyResults, 0, 0, 0, TradeType.MULTI);
         }
     }
