@@ -4,8 +4,6 @@ pragma solidity 0.8.9;
 import "hardhat/console.sol";
 
 // inherits
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
 import {LyraAdapter} from "../lyra/LyraAdapter.sol";
 import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
 import {OtusManager} from "../OtusManager.sol";
@@ -13,6 +11,9 @@ import {OtusManager} from "../OtusManager.sol";
 // interfaces
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/ISettlementCalculator.sol";
+
+// libraries
+import "../libraries/ConvertDecimals.sol";
 
 contract OtusOptionMarket is LyraAdapter {
     /************************************************
@@ -214,6 +215,7 @@ contract OtusOptionMarket is LyraAdapter {
 
     /// @dev transfers cost from user
     function _transferFromQuote(address from, address to, uint amount) internal {
+        amount = ConvertDecimals.convertFrom18(amount, quoteAsset.decimals());
         if (!quoteAsset.transferFrom(from, to, amount)) {
             revert QuoteTransferFailed(address(this), from, to, amount);
         }
@@ -223,6 +225,7 @@ contract OtusOptionMarket is LyraAdapter {
      * @notice Sends funds to trader after trader exercises positions
      */
     function sendFundsToTrader(address _trader, uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }

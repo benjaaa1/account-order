@@ -19,11 +19,12 @@ import "../interfaces/IMaxLossCalculator.sol";
 import "../interfaces/ISettlementCalculator.sol";
 
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "../libraries/ConvertDecimals.sol";
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // interfaces
 import "../interfaces/ILyraBase.sol";
@@ -36,7 +37,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @author Otus
  * @dev Trades, Validates and Settles Spread Options Positions on Lyra and Other platforms.
  */
-contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
     using SafeDecimalMath for uint;
     using SignedDecimalMath for int;
 
@@ -753,6 +754,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
      * @param _amount total collateral returned
      */
     function _routeCollateralToLP(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+
         // @dev free locked liquidity
         if (!quoteAsset.transfer(address(spreadLiquidityPool), _amount)) {
             revert TransferCollateralToLPFailed(_amount);
@@ -764,6 +767,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
      * @notice Transfer funds from user to cover options costs
      */
     function _routeCostsFromUser(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18AndRoundUp(_amount, quoteAsset.decimals());
+
         if (!quoteAsset.transferFrom(msg.sender, address(this), _amount)) {
             revert TransferFundsFromTraderFailed(msg.sender, _amount);
         }
@@ -779,6 +784,7 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
     }
 
     function _routeMaxLossCollateralFromMarket(uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(address(spreadMaxLossCollateral), _amount)) {
             // update this revert error
             revert TransferCollateralToLPFailed(_amount);
@@ -786,6 +792,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
     }
 
     function _routeFundsToTrader(address _trader, uint _amount) internal {
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
+
         if (!quoteAsset.transfer(_trader, _amount)) {
             revert TransferFundsToTraderFailed(_trader, _amount);
         }
@@ -793,6 +801,8 @@ contract SpreadMarket is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeT
 
     function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal returns (uint fee) {
         fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
+        fee = ConvertDecimals.convertFrom18AndRoundUp(fee, quoteAsset.decimals());
+
         if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
             revert TransferFundsFromTraderFailed(msg.sender, fee);
         }

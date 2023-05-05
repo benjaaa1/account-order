@@ -9,7 +9,7 @@ import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionM
 import {IOptionToken} from "@lyrafinance/protocol/contracts/interfaces/IOptionToken.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "../interfaces/ILyraBase.sol";
@@ -21,7 +21,7 @@ import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
  * @author Otus
  * @dev Forked from LyraAdapter by Lyra Finance for use with Multi Leg Multi Market One click trading on Otus
  */
-contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
     /************************************************
      *  STORED CONTRACT ADDRESSES
      ***********************************************/

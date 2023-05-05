@@ -6,6 +6,7 @@ import "hardhat/console.sol";
 // libraries
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../synthetix/DecimalMath.sol";
+import "../libraries/ConvertDecimals.sol";
 
 // inherits
 
@@ -14,6 +15,7 @@ import {SpreadMarket} from "../markets/SpreadMarket.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // spread option market
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -25,7 +27,7 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
  * 1. Collateralizing short options on Lyra.
  * 2. Lends funds to traders through spread option market and other token markets.
  */
-contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
+contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, ERC20 {
     using DecimalMath for uint;
 
     struct Liquidity {
@@ -128,7 +130,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
      * @notice initialize users account
      * @param _spreadOptionMarket SpreadMarket
      */
-    function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner {
+    function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner initializer {
         spreadMarket = SpreadMarket(_spreadOptionMarket);
         quoteAsset = ERC20(_quoteAsset);
     }
@@ -179,7 +181,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         // uint realQuote = amountQuote;
 
         // // Convert to 18 dp for LP token minting
-        // amountQuote = ConvertDecimals.convertTo18(amountQuote, quoteAsset.decimals());
+        _amountQuote = ConvertDecimals.convertTo18(_amountQuote, quoteAsset.decimals());
 
         if (_beneficiary == address(0)) {
             revert InvalidBeneficiaryAddress(address(this), _beneficiary);
@@ -227,6 +229,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         // if no spreadMarket trades are using collateral
         // if enough free collateral to withdraw
         if (lockedLiquidity == 0) {
+            withdrawalValue = ConvertDecimals.convertFrom18(withdrawalValue, quoteAsset.decimals());
+
             if (!quoteAsset.transfer(_beneficiary, withdrawalValue)) {
                 revert QuoteTransferFailed(address(this), address(this), _beneficiary, withdrawalValue);
             }
@@ -342,6 +346,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     function _tryTransferQuote(address to, uint amount) internal returns (bool success) {
+        amount = ConvertDecimals.convertFrom18(amount, quoteAsset.decimals());
+
         if (amount > 0) {
             try quoteAsset.transfer(to, amount) returns (bool res) {
                 return res;
@@ -399,6 +405,8 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
         _lockLiquidity(_amount);
         // check active deposits
         // add to traded
+        _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
+
         if (_amount > 0) {
             if (!quoteAsset.transfer(address(spreadMarket), _amount)) {
                 revert CollateralTransferToMarketFail(_amount);
@@ -481,7 +489,7 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     function _getLiquidity(uint totalPoolValue, uint reservedTokenValue) internal view returns (Liquidity memory) {
         Liquidity memory liquidity = Liquidity(0, 0, 0);
 
-        uint availableQuote = _totalQuote();
+        uint availableQuote = ConvertDecimals.convertTo18(quoteAsset.balanceOf(address(this)), quoteAsset.decimals());
 
         liquidity.freeLiquidity = availableQuote > reservedTokenValue ? availableQuote - reservedTokenValue : 0;
         liquidity.burnableLiquidity = availableQuote;
@@ -514,9 +522,9 @@ contract SpreadLiquidityPool is Ownable, ReentrancyGuard, ERC20 {
     }
 
     function _getTotalPoolValueQuote() internal view returns (uint) {
-        int totalAssetValue = SafeCast.toInt256(quoteAsset.balanceOf(address(this)) + lockedLiquidity);
-
-        return uint(totalAssetValue);
+        uint totalAssetValue = ConvertDecimals.convertTo18(quoteAsset.balanceOf(address(this)), quoteAsset.decimals()) +
+            lockedLiquidity;
+        return totalAssetValue;
     }
 
     /// @dev Get total number of oustanding LiquidityPool Token
