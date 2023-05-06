@@ -1,12 +1,18 @@
 import { HardhatRuntimeEnvironment } from "hardhat/types";
-import { initSpread } from '../../scripts/init/initOptionMarketContracts';
+import { initMarkets } from '../../scripts/init/initOptionMarketContracts';
 
 module.exports = async (hre: HardhatRuntimeEnvironment) => {
     const { deployments, getNamedAccounts } = hre;
     const { deploy } = deployments;
     const { deployer } = await getNamedAccounts();
 
-    await deploy("SpreadOptionMarket", {
+    await deploy("OtusOptionMarket", {
+        from: deployer,
+        args: [],
+        log: true
+    });
+
+    await deploy("SpreadMarket", {
         from: deployer,
         args: [],
         log: true
@@ -21,10 +27,10 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
         log: true
     });
 
-    let name = 'Otus Spread Position';
-    let symbol = 'OSP';
+    let name = 'Otus Option Position';
+    let symbol = 'OOP';
 
-    await deploy("SpreadOptionToken", {
+    await deploy("OtusOptionToken", {
         from: deployer,
         args: [name, symbol],
         log: true
@@ -36,7 +42,19 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
         log: true
     });
 
-    await initSpread();
+    await deploy("MaxLossCalculator", {
+        from: deployer,
+        args: [],
+        log: true
+    });
+
+    await deploy("SettlementCalculator", {
+        from: deployer,
+        args: [],
+        log: true
+    });
+
+    await initMarkets();
 
 };
-module.exports.tags = ["local"];
+module.exports.tags = ["arbitrum"];

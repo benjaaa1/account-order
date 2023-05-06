@@ -3,7 +3,7 @@ import { getGlobalDeploys } from "@lyrafinance/protocol";
 import { toBN } from "@lyrafinance/protocol/dist/scripts/util/web3utils";
 import hre, { ethers } from 'hardhat';
 
-export const initOtus = async () => {
+export const initOtusAMM = async () => {
 
   try {
 

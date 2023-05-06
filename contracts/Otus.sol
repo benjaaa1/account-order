@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // interfaces
@@ -27,7 +27,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
  * @author Otus
  * @dev Handles creating markets/vaults
  */
-contract Otus is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract Otus is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTypes {
     using AddressSetLib for AddressSetLib.AddressSet;
     using DecimalMath for uint;
 

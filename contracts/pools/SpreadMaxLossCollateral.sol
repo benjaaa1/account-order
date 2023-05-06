@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 // libraries
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "../interfaces/IERC20Decimals.sol";
 import "../synthetix/SafeDecimalMath.sol";
 import "../synthetix/SignedDecimalMath.sol";
 import "../libraries/ConvertDecimals.sol";
@@ -25,7 +25,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuar
      *  INIT STATE
      ***********************************************/
 
-    IERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     address internal spreadMarket;
     address internal spreadLiquidityPool;
@@ -61,7 +61,7 @@ contract SpreadMaxLossCollateral is Ownable, SimpleInitializable, ReentrancyGuar
         address _spreadMarket,
         address _spreadLiquidityPool
     ) external onlyOwner initializer {
-        quoteAsset = IERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
         spreadMarket = _spreadMarket;
         spreadLiquidityPool = _spreadLiquidityPool;
     }

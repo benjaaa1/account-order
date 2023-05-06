@@ -1,26 +1,22 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
 // inherits
 import {LyraAdapter} from "../lyra/LyraAdapter.sol";
 import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
-import {OtusManager} from "../OtusManager.sol";
 
 // interfaces
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/ISettlementCalculator.sol";
 
 // libraries
-import "../libraries/ConvertDecimals.sol";
+import {ConvertDecimals} from "../libraries/ConvertDecimals.sol";
 
 contract OtusOptionMarket is LyraAdapter {
     /************************************************
      *  INIT STATE
      ***********************************************/
-
-    OtusManager internal otusManager;
 
     OtusOptionToken internal otusOptionToken;
 
@@ -47,8 +43,7 @@ contract OtusOptionMarket is LyraAdapter {
         address _otusOptionToken,
         address _settlementCalculator
     ) external onlyOwner {
-        adapterInitialize(_quoteAsset, _ethLyraBase, _btcLyraBase, _feeCounter);
-        otusManager = OtusManager(_otusManager);
+        adapterInitialize(_otusManager, _quoteAsset, _ethLyraBase, _btcLyraBase, _feeCounter);
         otusOptionToken = OtusOptionToken(_otusOptionToken);
         settlementCalculator = _settlementCalculator;
     }
@@ -144,9 +139,12 @@ contract OtusOptionMarket is LyraAdapter {
 
         // send extra back to user
         if (cost > actualCost) {
-            sendFundsToTrader(msg.sender, cost - actualCost);
+            emit Over(cost - actualCost);
+            // sendFundsToTrader(msg.sender, cost - actualCost);
         }
     }
+
+    event Over(uint over);
 
     function closeLyraPosition(bytes32 market, TradeInputParameters memory _trade) external nonReentrant {
         _closeOrForceClosePosition(market, _trade);

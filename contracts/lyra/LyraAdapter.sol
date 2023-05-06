@@ -4,9 +4,11 @@ pragma solidity ^0.8.9;
 import "hardhat/console.sol";
 
 // Interfaces
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "../interfaces/IERC20Decimals.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
 import {IOptionToken} from "@lyrafinance/protocol/contracts/interfaces/IOptionToken.sol";
+
+import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
@@ -15,6 +17,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import "../interfaces/ILyraBase.sol";
 import {BasicFeeCounter} from "@lyrafinance/protocol/contracts/periphery/BasicFeeCounter.sol";
 import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
+import {OtusManager} from "../OtusManager.sol";
 
 /**
  * @title LyraAdapter
@@ -27,9 +30,11 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
      ***********************************************/
 
     // susd is used for quoteasset
-    IERC20 internal quoteAsset;
+    IERC20Decimals internal quoteAsset;
     // Lyra trading rewards
     BasicFeeCounter public feeCounter;
+
+    OtusManager internal otusManager;
 
     /************************************************
      *  INIT STATE
@@ -41,19 +46,21 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
      *  CONSTRUCTOR
      ***********************************************/
 
-    constructor() {}
+    constructor() Ownable() {}
 
     /************************************************
      *  INIT
      ***********************************************/
 
     function adapterInitialize(
+        address _otusManager,
         address _quoteAsset,
         address _ethLyraBase,
         address _btcLyraBase,
         address _feeCounter
     ) internal onlyOwner initializer {
-        quoteAsset = IERC20(_quoteAsset);
+        otusManager = OtusManager(_otusManager);
+        quoteAsset = IERC20Decimals(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
         feeCounter = BasicFeeCounter(_feeCounter);
@@ -82,14 +89,12 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
      * @return result of opening trade
      */
     function _openPosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
-        IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
-        // IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        // IOptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
+        OptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
 
         address optionMarket = lyraBase(_market).getOptionMarket();
 
         (bool success, bytes memory data) = optionMarket.call(
-            abi.encodeWithSelector(IOptionMarket.openPosition.selector, convertedParams)
+            abi.encodeWithSelector(OptionMarket.openPosition.selector, convertedParams)
         );
 
         if (!success) {
@@ -103,7 +108,7 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
             }
         }
 
-        IOptionMarket.Result memory result = abi.decode(data, (IOptionMarket.Result));
+        OptionMarket.Result memory result = abi.decode(data, (OptionMarket.Result));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -155,9 +160,9 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
      * @return result of trade
      */
     function _closePosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
 
-        IOptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
+        OptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -191,8 +196,8 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
         bytes32 _market,
         TradeInputParameters memory params
     ) internal returns (TradeResult memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        IOptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
+        OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
+        OptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(
@@ -254,17 +259,18 @@ contract LyraAdapter is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTyp
 
     function _convertParams(
         TradeInputParameters memory _params
-    ) internal pure returns (IOptionMarket.TradeInputParameters memory) {
+    ) internal view returns (OptionMarket.TradeInputParameters memory) {
         return
-            IOptionMarket.TradeInputParameters({
+            OptionMarket.TradeInputParameters({
                 strikeId: _params.strikeId,
                 positionId: _params.positionId,
                 iterations: _params.iterations,
-                optionType: IOptionMarket.OptionType(uint(_params.optionType)),
+                optionType: OptionMarket.OptionType(uint(_params.optionType)),
                 amount: _params.amount,
                 setCollateralTo: _params.setCollateralTo,
                 minTotalCost: _params.minTotalCost,
-                maxTotalCost: _params.maxTotalCost
+                maxTotalCost: _params.maxTotalCost,
+                referrer: otusManager.treasury()
             });
     }
 

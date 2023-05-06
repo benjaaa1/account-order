@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
 // libraries
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../synthetix/DecimalMath.sol";
-import "../libraries/ConvertDecimals.sol";
+import {ConvertDecimals} from "../libraries/ConvertDecimals.sol";
 
 // inherits
 
@@ -178,7 +178,7 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
      */
     function initiateDeposit(address _beneficiary, uint _amountQuote) external nonReentrant {
         // USDC
-        // uint realQuote = amountQuote;
+        uint realQuote = _amountQuote;
 
         // // Convert to 18 dp for LP token minting
         _amountQuote = ConvertDecimals.convertTo18(_amountQuote, quoteAsset.decimals());
@@ -198,8 +198,8 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
         _mint(_beneficiary, amountTokens);
         emit DepositProcessed(msg.sender, _beneficiary, 0, _amountQuote, tokenPrice, amountTokens, block.timestamp);
 
-        if (!quoteAsset.transferFrom(msg.sender, address(this), _amountQuote)) {
-            revert QuoteTransferFailed(address(this), msg.sender, address(this), _amountQuote);
+        if (!quoteAsset.transferFrom(msg.sender, address(this), realQuote)) {
+            revert QuoteTransferFailed(address(this), msg.sender, address(this), realQuote);
         }
     }
 

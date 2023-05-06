@@ -138,8 +138,6 @@ interface ILyraBase {
 
     function getMarketParams() external view returns (MarketParams memory);
 
-    function getExchangeParams() external view returns (ExchangeRateParams memory);
-
     /////////////////////////////
     // Option Position Getters //
     /////////////////////////////

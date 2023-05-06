@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
@@ -11,6 +11,7 @@ import {OtusOptionToken} from "../positions/OtusOptionToken.sol";
 import {SpreadLiquidityPool} from "../pools/SpreadLiquidityPool.sol";
 import {OptionToken} from "@lyrafinance/protocol/contracts/OptionToken.sol";
 import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
+import {ConvertDecimals} from "../libraries/ConvertDecimals.sol";
 
 // libraries
 import "../synthetix/SafeDecimalMath.sol";
@@ -19,7 +20,6 @@ import "../interfaces/IMaxLossCalculator.sol";
 import "../interfaces/ISettlementCalculator.sol";
 
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "../libraries/ConvertDecimals.sol";
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -30,7 +30,7 @@ import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/Sim
 import "../interfaces/ILyraBase.sol";
 import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Decimals} from "../interfaces/IERC20Decimals.sol";
 
 /**
  * @title SpreadMarket
@@ -45,7 +45,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
      *  INIT STATE
      ***********************************************/
 
-    IERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     mapping(bytes32 => ILyraBase) internal lyraBases;
 
@@ -94,7 +94,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         address _settlementCalculator
     ) external onlyOwner initializer {
         otusManager = OtusManager(_otusManager);
-        quoteAsset = IERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
 
@@ -289,10 +289,9 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         for (uint i = 0; i < _longTrades.length; i++) {
             TradeInputParameters memory trade = _longTrades[i];
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
-
+            OptionMarket.Result memory result = OptionMarket(optionMarket).openPosition(convertedParams);
             if (result.totalCost > trade.maxTotalCost) {
                 revert PremiumAboveExpected(result.totalCost, trade.maxTotalCost);
             }
@@ -328,9 +327,9 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         for (uint i = 0; i < _shortTrades.length; i++) {
             TradeInputParameters memory trade = _shortTrades[i];
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(trade);
 
-            IOptionMarket.Result memory result = IOptionMarket(optionMarket).openPosition(convertedParams);
+            OptionMarket.Result memory result = OptionMarket(optionMarket).openPosition(convertedParams);
 
             if (result.totalCost < trade.minTotalCost) {
                 revert PremiumBelowExpected(result.totalCost, trade.minTotalCost);
@@ -450,7 +449,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         bytes32 _market,
         TradeInputParameters[] memory longTrades
     ) internal returns (uint partialSum, TradeResult[] memory buyCloseResults, uint totalTraderProfit, uint totalFees) {
-        IOptionMarket.Result memory result;
+        OptionMarket.Result memory result;
         buyCloseResults = new TradeResult[](longTrades.length);
         for (uint i = 0; i < longTrades.length; i++) {
             (, uint amount, ) = getLyraPosition(_market, longTrades[i].positionId);
@@ -466,9 +465,9 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
                 partialSum += longTrades[i].amount;
             }
 
-            IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+            OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(longTrades[i]);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(longTrades[i]);
 
             bool outsideDeltaCutoff = lyraBase(_market)._isOutsideDeltaCutoff(convertedParams.strikeId);
 
@@ -509,7 +508,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
             uint totalCollateral
         )
     {
-        IOptionMarket.Result memory result;
+        OptionMarket.Result memory result;
         sellCloseResults = new TradeResult[](shortTrades.length);
 
         for (uint i = 0; i < shortTrades.length; i++) {
@@ -528,13 +527,13 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
 
             (uint collateralToRemove, uint setCollateralTo) = getRequiredCollateralOnClose(_market, shortTrades[i]);
 
-            IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
+            OptionMarket optionMarket = OptionMarket(lyraBase(_market).getOptionMarket());
             // should set collateral to correctly for full closes too
             if (partialSum > 0) {
                 shortTrades[i].setCollateralTo = setCollateralTo;
             }
 
-            IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(shortTrades[i]);
+            OptionMarket.TradeInputParameters memory convertedParams = _convertParams(shortTrades[i]);
 
             if (!lyraBase(_market)._isOutsideDeltaCutoff(convertedParams.strikeId)) {
                 result = optionMarket.closePosition(convertedParams);
@@ -1086,17 +1085,18 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
 
     function _convertParams(
         TradeInputParameters memory _params
-    ) internal pure returns (IOptionMarket.TradeInputParameters memory) {
+    ) internal view returns (OptionMarket.TradeInputParameters memory) {
         return
-            IOptionMarket.TradeInputParameters({
+            OptionMarket.TradeInputParameters({
                 strikeId: _params.strikeId,
                 positionId: _params.positionId,
                 iterations: _params.iterations,
-                optionType: IOptionMarket.OptionType(uint(_params.optionType)),
+                optionType: OptionMarket.OptionType(uint(_params.optionType)),
                 amount: _params.amount,
                 setCollateralTo: _params.setCollateralTo,
                 minTotalCost: _params.minTotalCost,
-                maxTotalCost: _params.maxTotalCost
+                maxTotalCost: _params.maxTotalCost,
+                referrer: otusManager.treasury()
             });
     }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
@@ -11,7 +11,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 // import {SpreadOptionMarket} from "./SpreadOptionMarket.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 import {OptionToken} from "@lyrafinance/protocol/contracts/OptionToken.sol";
 import {OptionMarket} from "@lyrafinance/protocol/contracts/OptionMarket.sol";
@@ -26,7 +26,7 @@ import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/
  * @author Otus
  * @dev Provides a tokenized representation of each trade position including amount of options and collateral used from Pool.
  */
-contract OtusOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ERC721Enumerable, ITradeTypes {
+contract OtusOptionToken is Ownable, SimpleInitializable, ReentrancyGuard, ERC721Enumerable, ITradeTypes {
     using SafeDecimalMath for uint;
 
     enum PositionUpdatedType {
@@ -396,7 +396,7 @@ contract OtusOptionToken is Ownable, SimpleInitializeable, ReentrancyGuard, ERC7
             // state closed - collateral routing handled on close
             // @todo state liquidated
             if (lyraPosition.state == OptionToken.PositionState.SETTLED) {
-                (strikePrice, priceAtExpiry, ) = optionMarket.getSettlementParameters(lyraPosition.strikeId);
+                (strikePrice, priceAtExpiry, , ) = optionMarket.getSettlementParameters(lyraPosition.strikeId);
 
                 settledPositions[i] = SettledPosition({
                     trader: position.trader,

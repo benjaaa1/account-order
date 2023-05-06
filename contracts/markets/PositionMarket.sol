@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 import "hardhat/console.sol";
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // interfaces
@@ -25,7 +25,7 @@ import {RangedMarket} from "./RangedMarket.sol";
  * @dev A market that has made a trade through the Spread Option Market for Token traders
  * @dev Executes and Holds any profits until settlement by Ranged Market keeper
  */
-contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
+contract PositionMarket is SimpleInitializable, ReentrancyGuard, ITradeTypes {
     using DecimalMath for uint;
 
     uint private constant ONE_PERCENT = 1e16;

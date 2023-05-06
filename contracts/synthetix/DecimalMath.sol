@@ -20,7 +20,7 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 /**
  * @title DecimalMath
@@ -39,8 +39,7 @@ library DecimalMath {
 
     /* The number representing 1.0 for higher fidelity numbers. */
     uint public constant PRECISE_UNIT = 10 ** uint(highPrecisionDecimals);
-    uint private constant UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR =
-        10 ** uint(highPrecisionDecimals - decimals);
+    uint private constant UNIT_TO_HIGH_PRECISION_CONVERSION_FACTOR = 10 ** uint(highPrecisionDecimals - decimals);
 
     /**
      * @return Provides an interface to UNIT.

@@ -7,6 +7,7 @@ import "@nomiclabs/hardhat-waffle";
 import { lyraContractPaths } from "@lyrafinance/protocol/dist/test/utils/package/index-paths";
 import "@nomiclabs/hardhat-etherscan";
 import 'solidity-coverage';
+import 'hardhat-docgen';
 
 dotenv.config();
 
@@ -27,15 +28,6 @@ const config = {
             },
             {
                 version: "0.8.9",
-                settings: {
-                    optimizer: {
-                        enabled: true,
-                        runs: 1,
-                    },
-                },
-            },
-            {
-                version: "^0.8.0",
                 settings: {
                     optimizer: {
                         enabled: true,
@@ -67,6 +59,20 @@ const config = {
             },
             deploy: ['deploy/optimism'],
         },
+        "arbitrum-goerli": {
+            url: process.env.NODE_URL_L2_ARB
+                ? process.env.NODE_URL_L2_ARB
+                : "",
+            accounts: process.env.MAINNET_DEPLOY_PK
+                ? [process.env.MAINNET_DEPLOY_PK]
+                : undefined,
+            verify: {
+                etherscan: {
+                    apiUrl: "https://api-goerli.arbiscan.io/"
+                },
+            },
+            deploy: ['deploy/arbitrum'],
+        }
     },
     namedAccounts: {
         deployer: {
@@ -94,7 +100,16 @@ const config = {
         currency: "USD",
     },
     etherscan: {
-        apiKey: process.env.ETHERSCAN_API_KEY
+        apiKey: {
+            mainnet: process.env.ETHERSCAN_API_KEY,
+            arbitrumGoerli: process.env.TESTNET_API_KEY
+        },
+
+    },
+    docgen: {
+        path: './docs',
+        clear: true,
+        runOnCompile: true,
     }
 };
 

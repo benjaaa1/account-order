@@ -30,8 +30,8 @@ interface IOptionMarket {
         uint amount;
         uint expiry;
         uint strikePrice;
+        uint spotPrice;
         ILiquidityPool.Liquidity liquidity;
-        ISynthetixAdapter.ExchangeParams exchangeParams;
     }
     struct Strike {
         uint id;
@@ -60,6 +60,7 @@ interface IOptionMarket {
         uint setCollateralTo;
         uint minTotalCost;
         uint maxTotalCost;
+        address referrer;
     }
     struct Result {
         uint positionId;
@@ -69,67 +70,42 @@ interface IOptionMarket {
 
     function getStrike(uint strikeId) external view returns (Strike memory);
 
-    function getOptionBoard(
-        uint boardId
-    ) external view returns (OptionBoard memory);
+    function getOptionBoard(uint boardId) external view returns (OptionBoard memory);
 
     function getSettlementParameters(
         uint strikeId
-    )
-        external
-        view
-        returns (
-            uint strikePrice,
-            uint priceAtExpiry,
-            uint strikeToBaseReturned
-        );
+    ) external view returns (uint strikePrice, uint priceAtExpiry, uint strikeToBaseReturned, uint longScaleFactor);
 
     function boardToPriceAtExpiry(uint256) external view returns (uint256);
 
     error ExpectedNonZeroValue(address thrower, NonZeroValues valueType);
     error InvalidBoardId(address thrower, uint boardId);
-    error InvalidExpiryTimestamp(
-        address thrower,
-        uint currentTime,
-        uint expiry,
-        uint maxBoardExpiry
-    );
+    error InvalidExpiryTimestamp(address thrower, uint currentTime, uint expiry, uint maxBoardExpiry);
     error BoardNotFrozen(address thrower, uint boardId);
     error BoardAlreadySettled(address thrower, uint boardId);
     error BoardNotExpired(address thrower, uint boardId);
     error InvalidStrikeId(address thrower, uint strikeId);
-    error StrikeSkewLengthMismatch(
-        address thrower,
-        uint strikesLength,
-        uint skewsLength
-    );
-    error TotalCostOutsideOfSpecifiedBounds(
-        address thrower,
-        uint totalCost,
-        uint minCost,
-        uint maxCost
-    );
+    error StrikeSkewLengthMismatch(address thrower, uint strikesLength, uint skewsLength);
+    error TotalCostOutsideOfSpecifiedBounds(address thrower, uint totalCost, uint minCost, uint maxCost);
     error BoardIsFrozen(address thrower, uint boardId);
-    error BoardExpired(
-        address thrower,
-        uint boardId,
-        uint boardExpiry,
-        uint currentTime
-    );
+    error BoardExpired(address thrower, uint boardId, uint boardExpiry, uint currentTime);
 }
 
-interface ISynthetixAdapter {
-    struct ExchangeParams {
-        uint spotPrice;
-        bytes32 quoteKey;
-        bytes32 baseKey;
-        uint quoteBaseFeeRate;
-        uint baseQuoteFeeRate;
+interface IGMXAdapter {
+    enum PriceType {
+        MIN_PRICE, // minimise the spot based on logic in adapter - can revert
+        MAX_PRICE, // maximise the spot based on logic in adapter
+        REFERENCE,
+        FORCE_MIN, // minimise the spot based on logic in adapter - shouldn't revert unless feeds are compromised
+        FORCE_MAX
     }
 
-    function getExchangeParams(
-        address optionMarket
-    ) external view returns (ExchangeParams memory exchangeParams);
+    function getSpotPriceForMarket(
+        IOptionMarket optionMarket,
+        PriceType pricing
+    ) external view returns (uint spotPrice);
+
+    function rateAndCarry(IOptionMarket optionMarket) external view returns (int rateDecimal);
 }
 
 interface ILiquidityPool {
@@ -140,11 +116,10 @@ interface ILiquidityPool {
         uint pendingDeltaLiquidity;
         uint usedDeltaLiquidity;
         uint NAV;
+        uint longScaleFactor;
     }
 
-    function getLiquidity(
-        uint spotPrice
-    ) external view returns (Liquidity memory);
+    function getLiquidity() external view returns (Liquidity memory);
 }
 
 interface IOptionMarketPricer {
@@ -166,21 +141,6 @@ interface IOptionMarketPricer {
         uint ivVariance;
         uint ivVarianceCoefficient;
         uint varianceFee;
-    }
-
-    struct TradeLimitParameters {
-        int minDelta;
-        int minForceCloseDelta;
-        uint tradingCutoff;
-        uint minBaseIV;
-        uint maxBaseIV;
-        uint minSkew;
-        uint maxSkew;
-        uint minVol;
-        uint maxVol;
-        uint absMinSkew;
-        uint absMaxSkew;
-        bool capSkewsToAbs;
     }
 
     struct TradeResult {
@@ -222,10 +182,7 @@ interface IOptionMarketPricer {
         uint coefficient
     ) external view returns (uint timeWeightedFee);
 
-    function getPricingParams()
-        external
-        view
-        returns (PricingParameters memory pricingParameters);
+    function getPricingParams() external view returns (PricingParameters memory pricingParameters);
 
     function ivImpactForTrade(
         IOptionMarket.TradeParameters memory trade,
@@ -236,57 +193,13 @@ interface IOptionMarketPricer {
     function getVegaUtilFee(
         IOptionMarket.TradeParameters memory trade,
         IOptionGreekCache.TradePricing memory pricing
-    )
-        external
-        view
-        returns (VegaUtilFeeComponents memory vegaUtilFeeComponents);
+    ) external view returns (VegaUtilFeeComponents memory vegaUtilFeeComponents);
 
     function getVarianceFee(
         IOptionMarket.TradeParameters memory trade,
         IOptionGreekCache.TradePricing memory pricing,
         uint skew
-    )
-        external
-        view
-        returns (VarianceFeeComponents memory varianceFeeComponents);
-
-    function tradeLimitParams()
-        external
-        view
-        returns (TradeLimitParameters memory);
-
-    error ForceCloseSkewOutOfRange(
-        address thrower,
-        bool isBuy,
-        uint newSkew,
-        uint minSkew,
-        uint maxSkew
-    );
-    error TradingCutoffReached(
-        address thrower,
-        uint tradingCutoff,
-        uint boardExpiry,
-        uint currentTime
-    );
-    error VolSkewOrBaseIvOutsideOfTradingBounds(
-        address thrower,
-        bool isBuy,
-        VolComponents currentVol,
-        VolComponents newVol,
-        VolComponents tradeBounds
-    );
-    error TradeDeltaOutOfRange(
-        address thrower,
-        int strikeCallDelta,
-        int minDelta,
-        int maxDelta
-    );
-    error ForceCloseDeltaOutOfRange(
-        address thrower,
-        int strikeCallDelta,
-        int minDelta,
-        int maxDelta
-    );
+    ) external view returns (VarianceFeeComponents memory varianceFeeComponents);
 }
 
 interface IOptionGreekCache {
@@ -309,7 +222,6 @@ interface IOptionGreekCache {
         uint optionValueSkewGWAVPeriod;
         uint gwavSkewFloor;
         uint gwavSkewCap;
-        int rateAndCarry;
     }
     struct NetGreeks {
         int netDelta;
@@ -360,37 +272,17 @@ interface IOptionGreekCache {
         uint[] skewGWAVs;
     }
 
-    function getStrikeCache(
-        uint strikeId
-    ) external view returns (StrikeCache memory);
+    function getStrikeCache(uint strikeId) external view returns (StrikeCache memory);
 
-    function getSkewGWAV(
-        uint strikeId,
-        uint secondsAgo
-    ) external view returns (uint skewGWAV);
+    function getSkewGWAV(uint strikeId, uint secondsAgo) external view returns (uint skewGWAV);
 
-    function getOptionBoardCache(
-        uint boardId
-    ) external view returns (OptionBoardCache memory);
+    function getOptionBoardCache(uint boardId) external view returns (OptionBoardCache memory);
 
-    function getGreekCacheParams()
-        external
-        view
-        returns (GreekCacheParameters memory);
+    function getGreekCacheParams() external view returns (GreekCacheParameters memory);
 
     function getGlobalCache() external view returns (GlobalCache memory);
 
-    function getBoardGreeksView(
-        uint boardId
-    ) external view returns (BoardGreeksView memory);
-
-    function getPriceForForceClose(
-        IOptionMarket.TradeParameters memory trade,
-        IOptionMarket.Strike memory strike,
-        uint expiry,
-        uint newVol,
-        bool isPostCutoff
-    ) external view returns (uint optionPrice, uint forceCloseVol);
+    function getBoardGreeksView(uint boardId) external view returns (BoardGreeksView memory);
 }
 
 interface ILyraRegister {
@@ -408,11 +300,7 @@ interface ILyraRegister {
         address baseAsset;
     }
 
-    function getMarketAddresses(
-        IOptionMarket optionMarket
-    ) external view returns (OptionMarketAddresses memory);
+    function getMarketAddresses(IOptionMarket optionMarket) external view returns (OptionMarketAddresses memory);
 
-    function getGlobalAddress(
-        bytes32 contractName
-    ) external view returns (address globalContract);
+    function getGlobalAddress(bytes32 contractName) external view returns (address globalContract);
 }

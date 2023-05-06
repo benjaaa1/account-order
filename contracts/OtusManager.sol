@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: ISC
-pragma solidity 0.8.9;
+pragma solidity 0.8.16;
 
 // inherits
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {SimpleInitializeable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializeable.sol";
+import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // interfaces
 import "./interfaces/ILyraBase.sol";
@@ -13,7 +13,7 @@ import "./interfaces/ILyraBase.sol";
  * @author Otus
  * @dev Handles settings for otus contracts
  */
-contract OtusManager is Ownable, SimpleInitializeable {
+contract OtusManager is Ownable, SimpleInitializable {
     /************************************************
      *  CONSTANTS - SETTINGS
      ***********************************************/
@@ -28,6 +28,8 @@ contract OtusManager is Ownable, SimpleInitializeable {
     /************************************************
      *  STATE - SETTINGS
      ***********************************************/
+
+    address public treasury; // treasury address
 
     /// @dev max trades per tx for spread market
     uint public maxTrades = 4; // 4 trades
@@ -73,11 +75,21 @@ contract OtusManager is Ownable, SimpleInitializeable {
     function initialize(address _ethLyraBase, address _btcLyraBase) external onlyOwner initializer {
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
+        treasury = msg.sender;
     }
 
     /************************************************
      *  TRADE SETTINGS
      ***********************************************/
+
+    /**
+     * @notice sets treasury address
+     * @param _treasury address
+     */
+    function setTreasury(address _treasury) external onlyOwner {
+        treasury = _treasury;
+    }
+
     /**
      * @notice controls max trades allowed
      * @param _maxTrades max trades per tx for spread market and multi leg market
