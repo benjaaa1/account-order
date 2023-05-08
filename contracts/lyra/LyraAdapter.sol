@@ -83,8 +83,6 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
      */
     function _openPosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
         IOptionMarket.TradeInputParameters memory convertedParams = _convertParams(params);
-        // IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        // IOptionMarket.Result memory result = optionMarket.openPosition(convertedParams);
 
         address optionMarket = lyraBase(_market).getOptionMarket();
 
@@ -104,95 +102,6 @@ contract LyraAdapter is Ownable, SimpleInitializeable, ReentrancyGuard, ITradeTy
         }
 
         IOptionMarket.Result memory result = abi.decode(data, (IOptionMarket.Result));
-
-        if (params.rewardRecipient != address(0)) {
-            feeCounter.trackFee(
-                address(optionMarket),
-                params.rewardRecipient,
-                _convertParams(params).amount,
-                result.totalCost,
-                result.totalFee
-            );
-        }
-
-        return
-            TradeResult({
-                market: _market,
-                positionId: result.positionId,
-                totalCost: result.totalCost,
-                totalFee: result.totalFee,
-                optionType: params.optionType,
-                amount: params.amount,
-                setCollateralTo: params.setCollateralTo,
-                strikeId: params.strikeId
-            });
-    }
-
-    /**
-     * @notice Attempt close under normal condition or forceClose
-     *          if position is outside of delta or too close to expiry.
-     *
-     * @param params The parameters for the requested trade
-     */
-    function _closeOrForceClosePosition(
-        bytes32 _market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResult memory tradeResult) {
-        if (
-            !lyraBase(_market)._isOutsideDeltaCutoff(_market, params.strikeId) &&
-            !lyraBase(_market)._isWithinTradingCutoff(_market, params.strikeId)
-        ) {
-            return _closePosition(_market, params);
-        } else {
-            // will pay less competitive price to close position but bypasses Lyra delta/trading cutoffs
-            return _forceClosePosition(_market, params);
-        }
-    }
-
-    /**
-     * @notice close a position in lyra mm
-     * @param params params to close trade on lyra
-     * @return result of trade
-     */
-    function _closePosition(bytes32 _market, TradeInputParameters memory params) internal returns (TradeResult memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-
-        IOptionMarket.Result memory result = optionMarket.closePosition(_convertParams(params));
-
-        if (params.rewardRecipient != address(0)) {
-            feeCounter.trackFee(
-                address(optionMarket),
-                params.rewardRecipient,
-                _convertParams(params).amount,
-                result.totalCost,
-                result.totalFee
-            );
-        }
-
-        return
-            TradeResult({
-                market: _market,
-                positionId: result.positionId,
-                totalCost: result.totalCost,
-                totalFee: result.totalFee,
-                optionType: params.optionType,
-                amount: params.amount,
-                setCollateralTo: params.setCollateralTo,
-                strikeId: params.strikeId
-            });
-    }
-
-    /**
-     * @notice forceclose a position in lyra mm
-     * @param params params to close trade on lyra
-     * @return result of trade
-     */
-    function _forceClosePosition(
-        bytes32 _market,
-        TradeInputParameters memory params
-    ) internal returns (TradeResult memory) {
-        IOptionMarket optionMarket = IOptionMarket(lyraBase(_market).getOptionMarket());
-        IOptionMarket.Result memory result = optionMarket.forceClosePosition(_convertParams(params));
 
         if (params.rewardRecipient != address(0)) {
             feeCounter.trackFee(

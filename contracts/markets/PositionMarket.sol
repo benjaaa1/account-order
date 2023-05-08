@@ -35,6 +35,8 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
      ***********************************************/
     SpreadMarket public spreadMarket;
 
+    OtusOptionMarket public otusOtionMarket;
+
     RangedMarket public rangedMarket;
 
     ERC20 public quoteAsset;
@@ -61,52 +63,95 @@ contract PositionMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
 
     function initialize(
         address payable _spreadMarket,
+        address _otusOptionMarket,
         address _rangedMarket,
         address _quoteAsset,
         bytes32 _market
     ) external initializer {
         spreadMarket = SpreadMarket(_spreadMarket);
+        otusOptionMarket = OtusOptionMarket(_otusOptionMarket);
         rangedMarket = RangedMarket(_rangedMarket);
         quoteAsset = ERC20(_quoteAsset);
         market = _market;
         // approve spread option market max (approve price/cost of position)
         quoteAsset.approve(address(spreadMarket), type(uint).max);
+        quoteAsset.approve(address(otusOptionMarket), type(uint).max);
     }
 
-    function buy(
+    function buyOut(
         uint price,
         address _trader,
-        TradeInputParameters[] memory _tradesWithPricing
+        TradeInputParameters[] memory _buysWithPricing
+    ) external onlyRangedMarket returns (uint, TradeResult[] memory, TradeResult[] memory, bool isIncrease) {
+        _transferFromQuote(_trader, address(this), price);
+        TradeInfo memory tradeInfo = TradeInfo({positionId: positionId, market: market});
+
+        (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = otusOptionMarket
+            .openPosition(tradeInfo, [], _buysWithPricing);
+
+        // spread option token position is valid
+        if (openedPositionId == 0) {
+            revert NotValidPosition();
+        }
+
+        // will only be updated once during trade period
+        // update with lyra position ids
+        if (tradeInfo.positionId == 0) {
+            positionId = openedPositionId;
+        } else {
+            isIncrease = true;
+        }
+
+        return (positionId, sellResults, buyResults, isIncrease);
+    }
+
+    function buyIn(
+        uint price,
+        address _trader,
+        TradeInputParameters[] memory _sellsWithPricing,
+        TradeInputParameters[] memory _buysWithPricing
     ) external onlyRangedMarket returns (uint, TradeResult[] memory, TradeResult[] memory, bool isIncrease) {
         // transfer cost from user
         _transferFromQuote(_trader, address(this), price);
 
         TradeInfo memory tradeInfo = TradeInfo({positionId: positionId, market: market});
 
-        // (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket
-        //     .openPosition(
-        //         tradeInfo,
-        //         _tradesWithPricing,
-        //         price // represents max cost + max loss - premium for amount
-        //     );
+        (uint openedPositionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults) = spreadOptionMarket
+            .openPosition(tradeInfo, _sellsWithPricing, _buysWithPricing);
 
-        // // spread option token position is valid
-        // if (openedPositionId == 0) {
-        //     revert NotValidPosition();
-        // }
+        // spread option token position is valid
+        if (openedPositionId == 0) {
+            revert NotValidPosition();
+        }
 
-        // // will only be updated once during trade period
-        // // update with lyra position ids
-        // if (tradeInfo.positionId == 0) {
-        //     positionId = openedPositionId;
-        // } else {
-        //     isIncrease = true;
-        // }
+        // will only be updated once during trade period
+        // update with lyra position ids
+        if (tradeInfo.positionId == 0) {
+            positionId = openedPositionId;
+        } else {
+            isIncrease = true;
+        }
 
-        // return (positionId, sellResults, buyResults, isIncrease);
+        return (positionId, sellResults, buyResults, isIncrease);
     }
 
-    function sell(
+    function sellOut(
+        uint _price,
+        uint _slippage,
+        TradeInputParameters[] memory _tradesWithPricing
+    ) external onlyRangedMarket returns (uint funds) {
+        otusOptionMarket.closePosition(market, positionId, _tradesWithPricing);
+
+        funds = quoteAsset.balanceOf(address(this));
+
+        _price = _price - _price.multiplyDecimal(_slippage);
+
+        if (_price > funds) {
+            revert BelowExpectedPrice(_price, funds);
+        }
+    }
+
+    function sellIn(
         uint _price,
         uint _slippage,
         TradeInputParameters[] memory _tradesWithPricing

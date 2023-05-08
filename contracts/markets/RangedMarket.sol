@@ -34,8 +34,6 @@ import {Otus} from "../Otus.sol";
 contract RangedMarket is SimpleInitializeable, ReentrancyGuard, ITradeTypes {
     using DecimalMath for uint;
 
-    uint private constant ONE_PERCENT = 1e16;
-
     uint public constant IN_STRIKES_LIMIT = 4;
 
     uint public constant OUT_STRIKES_LIMIT = 2;

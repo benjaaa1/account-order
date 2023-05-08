@@ -60,16 +60,16 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInfo memory tradeInfo,
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
-    ) external nonReentrant {
+    )
+        external
+        nonReentrant
+        returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults)
+    {
         if (otusManager.maxTrades() < (_shortTrades.length + _longTrades.length)) {
             revert("Too many trades");
         }
 
-        (TradeResult[] memory sellResults, TradeResult[] memory buyResults) = _openLyraPosition(
-            tradeInfo.market,
-            _shortTrades,
-            _longTrades
-        );
+        (sellResults, buyResults) = _openLyraPosition(tradeInfo.market, _shortTrades, _longTrades);
 
         if ((sellResults.length + buyResults.length) == 1) {
             // send lyra option token to trader
@@ -77,7 +77,7 @@ contract OtusOptionMarket is LyraAdapter {
             _transferToken(tradeInfo.market, msg.sender, lyraPositionId);
         } else {
             // send combo token to trader
-            uint positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
+            positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
             emit Trade(msg.sender, positionId, sellResults, buyResults, 0, 0, 0, TradeType.MULTI);
         }
     }
@@ -147,16 +147,13 @@ contract OtusOptionMarket is LyraAdapter {
         }
     }
 
-    function closeLyraPosition(bytes32 market, TradeInputParameters memory _trade) external nonReentrant {
-        _closeOrForceClosePosition(market, _trade);
-    }
-
     /************************************************
      *  POSITION SPLIT
      ***********************************************/
 
     /**
      * @notice Burns otus option token and transfers lyra tokens to trader if position not settled
+     * @dev this is used to close before expiry
      * @param _multiLegPositionId the position id of the multi leg position
      */
     function burnAndTransfer(uint _multiLegPositionId) external {
