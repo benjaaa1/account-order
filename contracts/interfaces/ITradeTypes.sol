@@ -101,8 +101,6 @@ interface ITradeTypes {
     event Trade(
         address indexed trader,
         uint positionId,
-        TradeResult[] sellResults,
-        TradeResult[] buyResults,
         uint collateralBorrowed, // borrowed
         uint maxCost,
         uint fee,

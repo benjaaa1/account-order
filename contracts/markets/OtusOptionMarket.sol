@@ -51,12 +51,17 @@ contract OtusOptionMarket is LyraAdapter {
     /************************************************
      *  Lyra Trade
      ***********************************************/
-
+    /**
+     * @notice opens a position
+     * @param tradeInfo the market to trade on and position
+     * @param _shortTrades the trades to open short positions
+     * @param _longTrades the trades to open long positions
+     */
     function openPosition(
         TradeInfo memory tradeInfo,
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
-    ) external nonReentrant {
+    ) external nonReentrant returns (uint positionId, uint lyraPositionId) {
         if (otusManager.maxTrades() < (_shortTrades.length + _longTrades.length)) {
             revert("Too many trades");
         }
@@ -69,12 +74,12 @@ contract OtusOptionMarket is LyraAdapter {
 
         if ((sellResults.length + buyResults.length) == 1) {
             // send lyra option token to trader
-            uint lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
+            lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
             _transferToken(tradeInfo.market, msg.sender, lyraPositionId);
         } else {
             // send combo token to trader
-            uint positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
-            emit Trade(msg.sender, positionId, sellResults, buyResults, 0, 0, 0, TradeType.MULTI);
+            positionId = otusOptionToken.openPosition(tradeInfo, msg.sender, sellResults, buyResults);
+            emit Trade(msg.sender, positionId, 0, 0, 0, TradeType.MULTI);
         }
     }
 
@@ -90,6 +95,8 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
     ) internal returns (TradeResult[] memory sellResults, TradeResult[] memory buyResults) {
+        uint bal = quoteAsset.balanceOf(address(this));
+
         TradeInputParameters memory trade;
         TradeResult memory result;
 
@@ -137,14 +144,12 @@ contract OtusOptionMarket is LyraAdapter {
             actualCost += result.totalCost;
         }
 
+        uint balAfterTrades = quoteAsset.balanceOf(address(this));
         // send extra back to user
-        if (cost > actualCost) {
-            emit Over(cost - actualCost);
-            // sendFundsToTrader(msg.sender, cost - actualCost);
+        if (balAfterTrades > bal) {
+            sendFundsToTrader(msg.sender, balAfterTrades - bal);
         }
     }
-
-    event Over(uint over);
 
     function closeLyraPosition(bytes32 market, TradeInputParameters memory _trade) external nonReentrant {
         _closeOrForceClosePosition(market, _trade);

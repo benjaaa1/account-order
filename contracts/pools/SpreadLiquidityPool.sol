@@ -4,6 +4,7 @@ pragma solidity 0.8.16;
 import "hardhat/console.sol";
 
 // libraries
+import {IERC20Decimals} from "../interfaces/IERC20Decimals.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../synthetix/DecimalMath.sol";
 import {ConvertDecimals} from "../libraries/ConvertDecimals.sol";
@@ -84,7 +85,7 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
     SpreadMarket public spreadMarket;
 
     // @dev Collateral
-    ERC20 public quoteAsset;
+    IERC20Decimals public quoteAsset;
 
     /// @dev Parameters relating to depositing and withdrawing from the Otus Spread LP
     LiquidityPoolParameters public lpParams;
@@ -132,7 +133,7 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
      */
     function initialize(address payable _spreadOptionMarket, address _quoteAsset) external onlyOwner initializer {
         spreadMarket = SpreadMarket(_spreadOptionMarket);
-        quoteAsset = ERC20(_quoteAsset);
+        quoteAsset = IERC20Decimals(_quoteAsset);
     }
 
     /************************************************
@@ -420,9 +421,7 @@ contract SpreadLiquidityPool is Ownable, SimpleInitializable, ReentrancyGuard, E
     function _lockLiquidity(uint _amount) internal {
         Liquidity memory liquidity = getLiquidity();
 
-        if (_amount > liquidity.freeLiquidity) {
-            revert LockingMoreQuoteThanIsFree(address(this), _amount, liquidity.freeLiquidity, lockedLiquidity);
-        }
+        require(liquidity.freeLiquidity > _amount, "NoFreeLiquidity");
 
         lockedLiquidity = lockedLiquidity + _amount;
     }

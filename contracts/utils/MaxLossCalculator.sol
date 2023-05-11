@@ -41,7 +41,7 @@ contract MaxLossCalculator {
         } else if (strikes.length == 4) {
             maxLoss = _calculate4Strikes(strikes);
         } else {
-            revert("MaxLossCalculator: number of strikes not supported");
+            revert("NumberOfStrikesTooHigh");
         }
 
         return _abs(maxLoss);
@@ -55,7 +55,7 @@ contract MaxLossCalculator {
 
     function _calculate2Strikes(Strike[] memory strikes) internal pure returns (int) {
         if (strikes.length != 2) {
-            revert("MaxLossCalculator: invalid number of strikes");
+            revert("InvalidStrikeAmount");
         }
 
         (int pnlAtMin1, int pnlAtMax1) = _calculateStrikeMinMax(strikes[0]);
@@ -89,7 +89,7 @@ contract MaxLossCalculator {
 
     function _calculate3Strikes(Strike[] memory strikes) internal pure returns (int) {
         if (strikes.length != 3) {
-            revert("MaxLossCalculator: invalid number of strikes");
+            revert("InvalidStrikeAmount");
         }
 
         (int pnlAtMin1, int pnlAtMax1) = _calculateStrikeMinMax(strikes[0]);
@@ -126,7 +126,7 @@ contract MaxLossCalculator {
 
     function _calculate4Strikes(Strike[] memory strikes) internal pure returns (int) {
         if (strikes.length != 4) {
-            revert("MaxLossCalculator: invalid number of strikes");
+            revert("InvalidStrikeAmount");
         }
 
         (int pnlAtMin1, int pnlAtMax1) = _calculateStrikeMinMax(strikes[0]);

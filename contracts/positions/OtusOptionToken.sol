@@ -31,6 +31,7 @@ contract OtusOptionToken is Ownable, SimpleInitializable, ReentrancyGuard, ERC72
 
     enum PositionUpdatedType {
         OPENED,
+        SPLIT_TRANSFER, // MULT LEGS
         ADJUSTED,
         CLOSED,
         SETTLED,

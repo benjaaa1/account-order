@@ -27,6 +27,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {SimpleInitializable} from "@lyrafinance/protocol/contracts/libraries/SimpleInitializable.sol";
 
 // interfaces
+import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
+
 import "../interfaces/ILyraBase.sol";
 import {ITradeTypes} from "../interfaces/ITradeTypes.sol";
 import {IOptionMarket} from "@lyrafinance/protocol/contracts/interfaces/IOptionMarket.sol";
@@ -158,27 +160,9 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         uint maxLoss = validMaxLoss(_tradeInfo.market, shortTrades, longTrades);
         // routes to this market => then routes to lyra option market
         _routeCostsFromUser(maxLoss);
+        // uint balanceAfterMaxLossPost = quoteAsset.balanceOf(address(this));
 
         _openPosition(_tradeInfo, shortTrades, longTrades, maxLoss);
-    }
-
-    function _calculateFees(
-        bytes32 _market,
-        uint _totalCollateralToAdd,
-        TradeResult[] memory _sellResults
-    ) internal returns (uint fee) {
-        uint shortExpiry;
-        TradeResult memory result;
-
-        ILyraBase _lyraBase = lyraBase(_market);
-
-        for (uint i = 0; i < _sellResults.length; i++) {
-            result = _sellResults[i];
-            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
-            shortExpiry = shortExpiry > strike.expiry ? shortExpiry : strike.expiry;
-        }
-
-        fee = _calculateFeesAndRouteFundsFromUser(_totalCollateralToAdd, shortExpiry);
     }
 
     /**
@@ -186,7 +170,6 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
      * @param _tradeInfo position and market info (0 if new position)
      * @param shortTrades trades info
      * @param longTrades trades info
-     * @param maxLoss max loss of position
      */
     function _openPosition(
         TradeInfo memory _tradeInfo,
@@ -220,7 +203,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         }
 
         // will be more than 0 if successfull trades have processed
-        uint maxLossPostedCollateral = maxLoss + premiumReceived - actualCost;
+        uint maxLossPostedCollateral = quoteAsset.balanceOf(address(this)); //maxLoss + premiumReceived - actualCost;
         if (maxLossPostedCollateral > 0) {
             _routeMaxLossCollateralFromMarket(maxLossPostedCollateral);
         }
@@ -237,10 +220,8 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         emit Trade(
             msg.sender,
             positionId,
-            sellResults,
-            buyResults,
             totalCollateralToAdd, // borrowed
-            actualCost,
+            maxLoss + premiumReceived - actualCost,
             fee,
             TradeType.SPREAD
         );
@@ -564,6 +545,33 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
     }
 
     /************************************************
+     *  UTILS - FEE CALCULATION
+     ***********************************************/
+
+    function _calculateFees(
+        bytes32 _market,
+        uint _totalCollateralToAdd,
+        TradeResult[] memory _sellResults
+    ) internal returns (uint fee) {
+        uint shortExpiry;
+        TradeResult memory result;
+
+        ILyraBase _lyraBase = lyraBase(_market);
+
+        for (uint i = 0; i < _sellResults.length; i++) {
+            result = _sellResults[i];
+            ILyraBase.Strike memory strike = _lyraBase.getStrike(result.strikeId);
+            shortExpiry = shortExpiry > strike.expiry ? shortExpiry : strike.expiry;
+        }
+
+        if (shortExpiry == 0 && shortExpiry <= block.timestamp) {
+            revert("ExpiryNotValid");
+        }
+
+        fee = _calculateFeesAndRouteFundsFromUser(_totalCollateralToAdd, shortExpiry);
+    }
+
+    /************************************************
      *  UTILS - TRADE EXECUTION
      ***********************************************/
     /// @dev returns sell strikeids, short/long trades and sum of max cost total set by trader
@@ -786,7 +794,7 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
         _amount = ConvertDecimals.convertFrom18(_amount, quoteAsset.decimals());
         if (!quoteAsset.transfer(address(spreadMaxLossCollateral), _amount)) {
             // update this revert error
-            revert TransferCollateralToLPFailed(_amount);
+            revert("TransferCollateralToLPFailed");
         }
     }
 
@@ -800,10 +808,10 @@ contract SpreadMarket is Ownable, SimpleInitializable, ReentrancyGuard, ITradeTy
 
     function _calculateFeesAndRouteFundsFromUser(uint _collateral, uint _maxExpiry) internal returns (uint fee) {
         fee = spreadLiquidityPool.calculateCollateralFee(_collateral, _maxExpiry);
-        fee = ConvertDecimals.convertFrom18AndRoundUp(fee, quoteAsset.decimals());
+        uint realFee = ConvertDecimals.convertFrom18AndRoundUp(fee, quoteAsset.decimals());
 
-        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), fee)) {
-            revert TransferFundsFromTraderFailed(msg.sender, fee);
+        if (!quoteAsset.transferFrom(msg.sender, address(spreadLiquidityPool), realFee)) {
+            revert TransferFundsFromTraderFailed(msg.sender, realFee);
         }
     }
 

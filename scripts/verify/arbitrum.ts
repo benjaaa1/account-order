@@ -16,10 +16,10 @@ const verify = async () => {
     const spreadLiquidityPool = deployed["SpreadLiquidityPool"];
     const spreadOptionToken = deployed["SpreadOptionToken"];
     const spreadMaxLossCollateral = deployed["SpreadMaxLossCollateral"];
-    const otusAMM = deployed["OtusAMM"];
-    const rangedMarket = deployed["RangedMarket"];
-    const rangedMarketToken = deployed["RangedMarketToken"];
-    const positionMarket = deployed["PositionMarket"];
+    const otusManager = deployed["OtusManager"];
+    // const rangedMarket = deployed["RangedMarket"];
+    // const rangedMarketToken = deployed["RangedMarketToken"];
+    // const positionMarket = deployed["PositionMarket"];
 
     // spread option market
     await hre.run("verify:verify", {
@@ -27,7 +27,7 @@ const verify = async () => {
       constructorArguments: [],
     })
 
-    // // spread liquidity pool
+    // spread liquidity pool
     let LPname = 'Otus Spread Liquidity Pool'
     let LPsymbol = 'OSL'
     await hre.run("verify:verify", {
@@ -56,11 +56,11 @@ const verify = async () => {
     //   constructorArguments: [],
     // })
 
-    // // otus amm
-    // await hre.run("verify:verify", {
-    //   address: otusAMM.address,
-    //   constructorArguments: [],
-    // })
+    // otus amm
+    await hre.run("verify:verify", {
+      address: otusManager.address,
+      constructorArguments: [],
+    })
 
     // // ranged market
     // await hre.run("verify:verify", {
