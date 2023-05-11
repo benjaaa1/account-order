@@ -64,6 +64,8 @@ contract OtusVault is BaseVault {
      * @param _vaultParams vault parameters
      */
     function initialize(
+        address _strategy,
+        address _owner,
         bytes32 _vaultName,
         string memory _tokenName,
         string memory _tokenSymbol,
@@ -74,7 +76,10 @@ contract OtusVault is BaseVault {
         quoteAsset = IERC20Decimals(_vaultParams.asset);
         vaultName = _vaultName;
 
-        baseInitialize(_tokenName, _tokenSymbol, _feeRecipient, _performanceFee, _vaultParams);
+        strategy = _strategy;
+        quoteAsset.approve(_strategy, type(uint).max);
+
+        baseInitialize(_owner, _tokenName, _tokenSymbol, _feeRecipient, _performanceFee, _vaultParams);
     }
 
     /************************************************

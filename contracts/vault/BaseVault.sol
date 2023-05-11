@@ -103,6 +103,7 @@ contract BaseVault is ReentrancyGuardUpgradeable, OwnableUpgradeable, ERC20Upgra
 
     /**
      * @notice Initializes the contract with variables from user
+     * @param _owner address
      * @param _tokenName vault token name
      * @param _tokenSymbol vault token symbol
      * @param _feeRecipient otus treasury address
@@ -110,6 +111,7 @@ contract BaseVault is ReentrancyGuardUpgradeable, OwnableUpgradeable, ERC20Upgra
      * @param _vaultParams vault parameters
      */
     function baseInitialize(
+        address _owner,
         string memory _tokenName,
         string memory _tokenSymbol,
         address _feeRecipient,
@@ -123,6 +125,7 @@ contract BaseVault is ReentrancyGuardUpgradeable, OwnableUpgradeable, ERC20Upgra
         __Ownable_init();
         __ReentrancyGuard_init();
         __ERC20_init(_tokenName, _tokenSymbol);
+        transferOwnership(_owner);
 
         uint assetBalance = IERC20(vaultParams.asset).balanceOf(address(this));
 

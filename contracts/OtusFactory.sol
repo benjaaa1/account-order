@@ -63,7 +63,7 @@ contract OtusFactory is Ownable, MinimalProxyFactory {
         string memory _tokenName,
         string memory _tokenSymbol,
         Vault.VaultParams memory _vaultParams
-    ) public returns (address payable vaultAddress) {
+    ) public returns (address payable vaultAddress, address strategyAddress) {
         /// @dev only allow otus manager to create vault
         address vaultManager = otusManager.owner();
         require(msg.sender == vaultManager, "Not allowed to create");
@@ -72,13 +72,21 @@ contract OtusFactory is Ownable, MinimalProxyFactory {
         uint performanceFee = otusManager.maxPerformanceFee(); // max performance fee
 
         vaultAddress = payable(_cloneAsMinimalProxy(address(vaultImplementation), "Vault Creation failure"));
+        strategyAddress = _cloneAsMinimalProxy(address(strategyImplementation), "Strategy Creation failure");
+
         OtusVault vault = OtusVault(vaultAddress);
-        vault.initialize(_vaultName, _tokenName, _tokenSymbol, feeRecipient, performanceFee, _vaultParams);
-        /// vault manager is msg.sender
-        vault.transferOwnership(msg.sender);
+        vault.initialize(
+            strategyAddress,
+            msg.sender,
+            _vaultName,
+            _tokenName,
+            _tokenSymbol,
+            feeRecipient,
+            performanceFee,
+            _vaultParams
+        );
 
         /// @dev create initial strategy for vault
-        address strategyAddress = _cloneAsMinimalProxy(address(strategyImplementation), "Strategy Creation failure");
         Strategy strategy = Strategy(strategyAddress);
         strategy.initialize(vaultAddress, _vaultParams.asset);
 
