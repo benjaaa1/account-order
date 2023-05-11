@@ -60,20 +60,20 @@ contract OtusOptionMarket is LyraAdapter {
         TradeInfo memory tradeInfo,
         TradeInputParameters[] memory _shortTrades,
         TradeInputParameters[] memory _longTrades
-    )
-        external
-        nonReentrant
-        returns (uint positionId, TradeResult[] memory sellResults, TradeResult[] memory buyResults)
-    {
+    ) external nonReentrant returns (uint positionId, uint lyraPositionId) {
         if (otusManager.maxTrades() < (_shortTrades.length + _longTrades.length)) {
             revert("Too many trades");
         }
 
-        (sellResults, buyResults) = _openLyraPosition(tradeInfo.market, _shortTrades, _longTrades);
+        (TradeResult[] memory sellResults, TradeResult[] memory buyResults) = _openLyraPosition(
+            tradeInfo.market,
+            _shortTrades,
+            _longTrades
+        );
 
         if ((sellResults.length + buyResults.length) == 1) {
             // send lyra option token to trader
-            uint lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
+            lyraPositionId = sellResults.length > 0 ? sellResults[0].positionId : buyResults[0].positionId;
             _transferToken(tradeInfo.market, msg.sender, lyraPositionId);
         } else {
             // send combo token to trader

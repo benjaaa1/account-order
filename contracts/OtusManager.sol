@@ -29,6 +29,8 @@ contract OtusManager is Ownable, SimpleInitializeable {
      *  STATE - SETTINGS
      ***********************************************/
 
+    address public treasury; // treasury address
+
     /// @dev max trades per tx for spread market
     uint public maxTrades = 4; // 4 trades
 
@@ -73,11 +75,21 @@ contract OtusManager is Ownable, SimpleInitializeable {
     function initialize(address _ethLyraBase, address _btcLyraBase) external onlyOwner initializer {
         lyraBases[bytes32("ETH")] = ILyraBase(_ethLyraBase);
         lyraBases[bytes32("BTC")] = ILyraBase(_btcLyraBase);
+        treasury = msg.sender;
     }
 
     /************************************************
      *  TRADE SETTINGS
      ***********************************************/
+
+    /**
+     * @notice sets treasury address
+     * @param _treasury address
+     */
+    function setTreasury(address _treasury) external onlyOwner {
+        treasury = _treasury;
+    }
+
     /**
      * @notice controls max trades allowed
      * @param _maxTrades max trades per tx for spread market and multi leg market

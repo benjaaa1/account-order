@@ -58,6 +58,7 @@
     "@lyrafinance/protocol": "^0.1.5-alpha",
     "@nomiclabs/hardhat-waffle": "^2.0.5",
     "@openzeppelin/contracts": "^4.8.2",
+    "@openzeppelin/contracts-upgradeable": "^4.8.3",
     "ethereum-waffle": "^3.0.0",
     "hardhat-dependency-compiler": "^1.1.3",
     "hardhat-deploy": "^0.11.25",
