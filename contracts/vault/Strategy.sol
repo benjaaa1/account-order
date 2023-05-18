@@ -13,7 +13,7 @@ import "../synthetix/SafeDecimalMath.sol";
 
 // Vault
 import {OtusVault} from "./OtusVault.sol";
-// import {StrategyHedger} from "./StrategyHedger.sol"; StrategyHedger
+import {StrategyHedger} from "./StrategyHedger.sol";
 
 // Markets
 import {OtusOptionMarket} from "../markets/OtusOptionMarket.sol";
@@ -25,7 +25,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
  * @author Otus
  * @dev Hedges delta of an vault options strategy
  */
-contract Strategy is OwnableUpgradeable, ITradeTypes {
+contract Strategy is StrategyHedger, OwnableUpgradeable, ITradeTypes {
     using SafeDecimalMath for uint;
     using SignedDecimalMath for int;
 
@@ -47,8 +47,14 @@ contract Strategy is OwnableUpgradeable, ITradeTypes {
         uint minTradeInterval;
         // partial collateral: 0.9 -> 90% * fullCollat
         uint collatPercent;
-        // reserved for hedging
+        // option types
+        uint optionTypeStrategy;
+        // market strategy
+        bytes32 market;
+        // percentage quote reserved for hedging
         uint hedgeReserve;
+        // hedges with perps
+        bool hedge;
     }
 
     /************************************************
@@ -87,7 +93,12 @@ contract Strategy is OwnableUpgradeable, ITradeTypes {
         _;
     }
 
-    constructor(address _otusOptionMarket) {
+    constructor(
+        address _otusOptionMarket,
+        address _marginAsset,
+        address _futuresMarketManager,
+        address _systemStatus
+    ) StrategyHeder(_marginAsset, _futuresMarketManager, _systemStatus) {
         otusOptionMarket = OtusOptionMarket(_otusOptionMarket);
     }
 
@@ -98,7 +109,6 @@ contract Strategy is OwnableUpgradeable, ITradeTypes {
     function initialize(address _vault, address _quoteAsset) external initializer {
         otusVault = OtusVault(_vault);
         quoteAsset = IERC20Decimals(_quoteAsset);
-
         __Ownable_init();
     }
 
@@ -128,36 +138,58 @@ contract Strategy is OwnableUpgradeable, ITradeTypes {
     /**
      * @notice opens a position
      * @param tradeInfo the market to trade on and position
-     * @param _shortTrades the trades to open short positions
-     * @param _longTrades the trades to open long positions
+     * @param _trade the trade to open
      * @param _round vault round
      */
     function open(
         TradeInfo memory tradeInfo,
-        TradeInputParameters[] memory _shortTrades,
-        TradeInputParameters[] memory _longTrades,
+        TradeInputParameters memory _trade,
         uint _round
     ) external onlyVault returns (uint allCapitalUsed) {
-        uint positionId;
         uint lyraPositionId;
         uint premium;
         uint capitalUsed;
 
+        bool isValidTrade = validStrategyTrade(_trade);
+        if (!isValidTrade) {}
         // @todo collateral to add
 
-        (positionId, lyraPositionId) = OtusOptionMarket(otusOptionMarket).openPosition(
-            tradeInfo,
-            _shortTrades,
-            _longTrades
-        );
+        tradeInfo.positionId = strikeToPositionId[strike.id];
 
-        /// @todo add support for spread markets
+        (lyraPositionId) = OtusOptionMarket(otusOptionMarket).openPosition(tradeInfo, _trade);
 
         /// @todo sum premium
-
         /// @todo sum capital used
 
-        emit VaultStrategyTrade(msg.sender, premium, capitalUsed, positionId, lyraPositionId, _round);
+        if (strategyDetail.hedge && _isLong(_trade.optionType)) {
+            placeHedgeOrder(tradeInfo, _trade, premium);
+        }
+
+        // update active strikes
+        _addActiveStrike(_trade.strikeId, lyraPositionId);
+
+        emit VaultStrategyTrade(msg.sender, premium, capitalUsed, lyraPositionId, _round);
+    }
+
+    /******************************************************
+     * POSITION MANAGEMENT
+     *****************************************************/
+
+    /**
+     * @dev add strike id to activeStrikeIds array
+     */
+    function _addActiveStrike(uint strikeId, uint tradedPositionId) internal {
+        if (!_isActiveStrike(strikeId)) {
+            strikeToPositionId[strikeId] = tradedPositionId;
+            activeStrikeIds.push(strikeId);
+        }
+    }
+
+    /******************************************************
+     * VALIDATE
+     *****************************************************/
+    function validStrategyTrade(TradeInputParameters memory _trade) internal returns (bool) {
+
     }
 
     /******************************************************
@@ -190,14 +222,7 @@ contract Strategy is OwnableUpgradeable, ITradeTypes {
 
     event StrategyUpdated(address vault, StrategyDetail updatedStrategy);
 
-    event VaultStrategyTrade(
-        address indexed _vault,
-        uint premium,
-        uint capitalUsed,
-        uint positionId,
-        uint lyraPositionId,
-        uint round
-    );
+    event VaultStrategyTrade(address indexed _vault, uint premium, uint capitalUsed, uint lyraPositionId, uint round);
 
     event QuoteReturnedToLP(uint amount);
 

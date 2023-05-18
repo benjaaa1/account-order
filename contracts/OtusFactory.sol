@@ -96,7 +96,7 @@ contract OtusFactory is Ownable, MinimalProxyFactory {
         // add account to ownerAccounts mapping
         ownerVaults[msg.sender].push(vaultAddress);
 
-        emit NewVault(msg.sender, vaultAddress);
+        emit NewVault(msg.sender, vaultAddress, _vaultName, _tokenName, _tokenSymbol, _vaultParams);
     }
 
     /************************************************
@@ -126,7 +126,14 @@ contract OtusFactory is Ownable, MinimalProxyFactory {
      ***********************************************/
 
     /// @dev new vault clone
-    event NewVault(address _owner, address _clone);
+    event NewVault(
+        address _owner,
+        address _clone,
+        bytes32 _vaultName,
+        string _tokenName,
+        string _tokenSymbol,
+        Vault.VaultParams _vaultParams
+    );
 
     /// @notice emitted when implementation is upgraded
     /// @param implementation: address of new implementation

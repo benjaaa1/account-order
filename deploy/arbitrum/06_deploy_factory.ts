@@ -17,4 +17,4 @@ module.exports = async (hre: HardhatRuntimeEnvironment) => {
     });
 
 };
-module.exports.tags = ["arbitrum-vault"];
+module.exports.tags = ["arbitrum-vault-factory"];

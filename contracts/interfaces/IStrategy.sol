@@ -6,8 +6,7 @@ import {ITradeTypes} from "./ITradeTypes.sol";
 interface IStrategy is ITradeTypes {
     function open(
         TradeInfo memory tradeInfo,
-        TradeInputParameters[] memory _shortTrades,
-        TradeInputParameters[] memory _longTrades,
+        TradeInputParameters memory _trade,
         uint round
     ) external returns (uint capitalUsed);
 

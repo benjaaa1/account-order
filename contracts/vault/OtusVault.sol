@@ -134,19 +134,14 @@ contract OtusVault is BaseVault {
     /**
      * @notice Used for trade
      * @param tradeInfo the market to trade on and position
-     * @param _shortTrades the trades to open short positions
-     * @param _longTrades the trades to open long positions
+     * @param _trade the trade to open
      */
-    function open(
-        TradeInfo memory tradeInfo,
-        TradeInputParameters[] memory _shortTrades,
-        TradeInputParameters[] memory _longTrades
-    ) external onlyOwner {
+    function open(TradeInfo memory tradeInfo, TradeInputParameters memory _trade) external onlyOwner {
         require(vaultState.roundInProgress, "Round closed");
 
         uint round = vaultState.round;
 
-        uint capitalUsed = IStrategy(strategy).open(tradeInfo, _shortTrades, _longTrades, round);
+        uint capitalUsed = IStrategy(strategy).open(tradeInfo, _trade, round);
 
         vaultState.lockedAmountLeft = vaultState.lockedAmountLeft - capitalUsed;
     }

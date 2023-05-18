@@ -93,6 +93,11 @@ interface ITradeTypes {
         SPREAD
     }
 
+    enum TradeDirection {
+        SHORT,
+        LONG
+    }
+
     /************************************************
      *  EVENTS
      ***********************************************/
