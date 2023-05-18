@@ -67,6 +67,20 @@ const config = {
             },
             deploy: ['deploy/optimism'],
         },
+        "optimistic-goerli": {
+            url: process.env.NODE_URL_L2_ARB
+                ? process.env.NODE_URL_L2_ARB
+                : "",
+            accounts: process.env.MAINNET_DEPLOY_PK
+                ? [process.env.MAINNET_DEPLOY_PK]
+                : undefined,
+            verify: {
+                etherscan: {
+                    apiUrl: "https://api-goerli-optimistic.etherscan.io/"
+                },
+            },
+            deploy: ['deploy/optimism-goerli'],
+        }
     },
     namedAccounts: {
         deployer: {
