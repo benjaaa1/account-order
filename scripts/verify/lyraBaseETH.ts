@@ -1,16 +1,13 @@
 import { getMarketDeploys, getGlobalDeploys } from "@lyrafinance/protocol";
 import hre from 'hardhat';
 import markets from "../../constants/markets.json";
+import { targets } from "../../constants/lyra.realPricingMockGmx.json";
 
-const _lyraQuoter = "0xa60D490C1984D91AB2E43e5b891b2AB8Ab790752";
+const _lyraQuoter = "0xf657d05B529FbC3B45eD3C7c4e72429982BC642A";
 
 const verify = async () => {
 
   try {
-
-    const lyraMarket = getMarketDeploys('mainnet-ovm', 'sETH');
-    const lyraGlobal = getGlobalDeploys('mainnet-ovm');
-
     const { deployments } = hre;
     const { all } = deployments;
 
@@ -21,18 +18,18 @@ const verify = async () => {
       address: lyraBaseETH.address,
       constructorArguments: [
         markets.ETH,
-        lyraGlobal.SynthetixAdapter.address, // synthetix adapter
-        lyraMarket.OptionToken.address,
-        lyraMarket.OptionMarket.address,
-        lyraMarket.LiquidityPool.address,
-        lyraMarket.ShortCollateral.address,
-        lyraMarket.OptionMarketPricer.address,
-        lyraMarket.OptionGreekCache.address,
-        lyraMarket.GWAVOracle.address,
+        targets.ExchangeAdapter.address, // synthetix adapter
+        targets.markets.wETH.OptionToken.address,
+        targets.markets.wETH.OptionMarket.address,
+        targets.markets.wETH.LiquidityPool.address,
+        targets.markets.wETH.ShortCollateral.address,
+        targets.markets.wETH.OptionMarketPricer.address,
+        targets.markets.wETH.OptionGreekCache.address,
+        targets.markets.wETH.GWAVOracle.address,
         _lyraQuoter
       ],
       libraries: {
-        BlackScholes: lyraGlobal.BlackScholes.address
+        BlackScholes: targets.BlackScholes.address
       }
     })
 
